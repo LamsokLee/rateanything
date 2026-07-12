@@ -6,18 +6,10 @@ node_modules/
 dist/
 build/
 
-# Environment — SECRETS (gitignored)
-# These contain real secrets and must NEVER be committed:
-.env.local
-.env.*.local
-.env.prod
-.env.staging
-.env.vercel
-
-# Environment — COMMITTED (no secrets, tracked in git):
-# .env               — shared defaults + documentation
-# .env.development   — local Docker dev defaults
-# .env.production    — prod non-secret config
+# Environment — NEVER commit secrets. Track .env.example only.
+.env
+.env.*
+!.env.example
 
 # Drizzle
 drizzle/meta/
