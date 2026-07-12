@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+build/
+
+# Environment — SECRETS (gitignored)
+# These contain real secrets and must NEVER be committed:
+.env.local
+.env.*.local
+.env.prod
+.env.staging
+.env.vercel
+
+# Environment — COMMITTED (no secrets, tracked in git):
+# .env               — shared defaults + documentation
+# .env.development   — local Docker dev defaults
+# .env.production    — prod non-secret config
+
+# Drizzle
+drizzle/meta/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Vercel
+.vercel/
+
+# Feature flags
+.feature-audit.md
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Agent scratch / handoff output (not app code)
+.yolo-sisyphus/

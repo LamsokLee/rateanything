@@ -1,0 +1,21 @@
+{
+  "name": "@rateanything/workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@next/env": "^14.2.0",
+    "@rateanything/db": "*",
+    "bullmq": "^5.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

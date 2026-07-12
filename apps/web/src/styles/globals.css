@@ -1,0 +1,230 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Semantic palette — LIGHT mode */
+    --background: #ffffff;
+    --foreground: #18181b;
+    --card: #f8f9fa;
+    --card-foreground: #18181b;
+    --muted: #f4f4f5;
+    --muted-foreground: #52525b;
+    --subtle: #71717a;
+    --border: #e4e4e7;
+    --input: #e4e4e7;
+    --accent: #3b82f6;
+    --accent-foreground: #ffffff;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --ring: #3b82f6;
+
+    /* Legacy vars (kept for body / component references) */
+    --bg-primary: #ffffff;
+    --bg-card: #f8f9fa;
+    --border-primary: #e4e4e7;
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-dim: #a1a1aa;
+    --color-positive: #22c55e;
+    --color-negative: #ef4444;
+    --color-accent: #3b82f6;
+    --color-accent-end: #8b5cf6;
+    --color-warning: #eab308;
+    --gradient-accent: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    --gradient-accent-hover: linear-gradient(135deg, #60a5fa, #a78bfa);
+    --gradient-score: linear-gradient(90deg, #ef4444, #eab308, #22c55e);
+  }
+
+  .dark {
+    /* Semantic palette — DARK mode (matches current hardcoded colors) */
+    --background: #131517;
+    --foreground: #fafafa;
+    --card: #1a1e23;
+    --card-foreground: #fafafa;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --subtle: #71717a;
+    --border: #25272d;
+    --input: #27272a;
+    --accent: #3b82f6;
+    --accent-foreground: #ffffff;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --ring: #3b82f6;
+
+    /* Legacy vars (kept for body / component references) */
+    --bg-primary: #131517;
+    --bg-card: #1a1e23;
+    --border-primary: #25272d;
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-dim: #52525b;
+    --color-positive: #22c55e;
+    --color-negative: #ef4444;
+    --color-accent: #3b82f6;
+    --color-accent-end: #8b5cf6;
+    --color-warning: #eab308;
+    --gradient-accent: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    --gradient-accent-hover: linear-gradient(135deg, #60a5fa, #a78bfa);
+    --gradient-score: linear-gradient(90deg, #ef4444, #eab308, #22c55e);
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
+
+@layer components {
+  .score-pill {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold font-mono;
+  }
+
+  .score-pill-green {
+    background: rgba(34, 197, 94, 0.12);
+    color: #22c55e;
+  }
+
+  .score-pill-yellow {
+    background: rgba(234, 179, 8, 0.12);
+    color: #eab308;
+  }
+
+  .score-pill-red {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+  }
+
+  .score-pill-blue {
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
+  }
+
+  .micro-label {
+    @apply text-[10px] uppercase tracking-wider font-semibold text-subtle;
+  }
+
+  .card-container {
+    @apply border border-border rounded-lg bg-card transition-colors duration-150;
+  }
+
+  .card-container:hover {
+    border-color: var(--muted-foreground);
+  }
+
+  .category-pill {
+    @apply inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium;
+  }
+
+  /* Gradient accent for interactive elements */
+  .gradient-text {
+    background: var(--gradient-accent);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* CTA vote button with gradient */
+  .vote-cta {
+    background: var(--gradient-accent);
+    @apply text-white text-xs font-semibold px-3 py-1.5 rounded-md;
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .vote-cta:hover {
+    background: var(--gradient-accent-hover);
+    transform: scale(1.02);
+  }
+
+  /* Micro-animation: button scale on hover */
+  .btn-alive {
+    transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+  }
+
+  .btn-alive:hover {
+    transform: scale(1.02);
+  }
+
+  /* Card with gradient border on hover */
+  .card-hover-accent {
+    @apply border border-border rounded-lg bg-card;
+    transition: border-color 150ms ease;
+  }
+
+  .card-hover-accent:hover {
+    border-color: #3b82f6;
+  }
+
+  /* Editorial title styling */
+  .title-editorial {
+    letter-spacing: -0.01em;
+  }
+
+  /* Controversy badge */
+  .badge-controversy {
+    @apply inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold;
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  /* Rank badges */
+  .rank-gold {
+    border-color: #fbbf24;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.08);
+  }
+
+  .rank-silver {
+    border-color: #94a3b8;
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.08);
+  }
+
+  .rank-bronze {
+    border-color: #f97316;
+    color: #f97316;
+    background: rgba(249, 115, 22, 0.08);
+  }
+
+  /* Gradient score bar */
+  .score-bar-gradient {
+    background: var(--gradient-score);
+  }
+
+  /* Tabular numbers for consistent alignment */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Clerk social login button overrides for dark-mode visibility */
+.cl-socialButtonsBlockButton.cl-socialButtonsBlockButton {
+  border: 1px solid var(--border) !important;
+  background-color: var(--muted) !important;
+  color: var(--foreground) !important;
+  box-shadow: none !important;
+}
+
+.cl-socialButtonsBlockButton .cl-socialButtonsBlockButtonText {
+  color: var(--foreground) !important;
+}

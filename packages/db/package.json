@@ -1,0 +1,28 @@
+{
+  "name": "@rateanything/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@next/env": "^14.2.0",
+    "drizzle-orm": "0.33.0",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "drizzle-kit": "0.24.2",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

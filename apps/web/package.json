@@ -1,0 +1,40 @@
+{
+  "name": "@rateanything/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-with-env.mjs --port 3001 --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^5.2.0",
+    "@clerk/themes": "^2.4.57",
+    "@rateanything/db": "*",
+    "@tanstack/react-query": "^5.50.0",
+    "@trpc/client": "^11.0.0-rc.0",
+    "@trpc/next": "^11.0.0-rc.0",
+    "@trpc/react-query": "^11.0.0-rc.0",
+    "@trpc/server": "^11.0.0-rc.0",
+    "ioredis": "^5.10.0",
+    "next": "^14.2.0",
+    "next-themes": "^0.4.6",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "superjson": "^2.2.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
+  }
+}
