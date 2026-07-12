@@ -42,3 +42,6 @@ npm-debug.log*
 
 # Agent scratch / handoff output (not app code)
 .yolo-sisyphus/
+
+# Playwright test output
+test-results/

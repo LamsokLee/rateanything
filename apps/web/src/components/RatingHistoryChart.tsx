@@ -119,7 +119,7 @@ export function RatingHistoryChart({ data }: RatingHistoryChartProps) {
     const d = new Date(t);
     xLabels.push({
       time: t,
-      label: `${months[d.getMonth()]} ${d.getDate()}`,
+      label: `${months[d.getUTCMonth()]} ${d.getUTCDate()}`,
     });
   }
 
@@ -170,7 +170,7 @@ export function RatingHistoryChart({ data }: RatingHistoryChartProps) {
 
     const timeAtX = minTime + ((svgMouseX - padding.left) / chartW) * timeSpan;
     const dateAtX = new Date(timeAtX);
-    const dateStr = `${months[dateAtX.getMonth()]} ${dateAtX.getDate()}`;
+    const dateStr = `${months[dateAtX.getUTCMonth()]} ${dateAtX.getUTCDate()}`;
 
     const values: { name: string; score: number; color: string }[] = [];
     for (const optPath of optionPaths) {

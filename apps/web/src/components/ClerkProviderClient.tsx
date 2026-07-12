@@ -3,7 +3,7 @@
 /**
  * ClerkProvider wrapper — client component that wraps children in ClerkProvider.
  * It receives initialState from the server layout for proper SSR hydration.
- * Dev-mode bypass: skips ClerkProvider when publishable key contains "placeholder".
+ * Dev-mode bypass: skips ClerkProvider when publishable key is missing or contains "placeholder".
  */
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";

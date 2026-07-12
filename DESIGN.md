@@ -182,10 +182,11 @@ CREATE TABLE ratings (
   CONSTRAINT must_have_rater CHECK (user_id IS NOT NULL OR guest_id IS NOT NULL)
 );
 
--- Comments (replies to ratings, 2-level threading)
+-- Comments (replies to ratings or topics, 2-level threading, topic-scoped)
 CREATE TABLE comments (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  rating_id   UUID NOT NULL REFERENCES ratings(id) ON DELETE CASCADE,
+  rating_id   UUID REFERENCES ratings(id) ON DELETE CASCADE,  -- optional: comment on a rating
+  topic_id    UUID REFERENCES topics(id) ON DELETE CASCADE,    -- optional: comment on a topic (at least one must be set)
   user_id     UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
   parent_id   UUID REFERENCES comments(id) ON DELETE CASCADE,
   content     VARCHAR(500) NOT NULL CHECK (char_length(content) >= 20),
@@ -268,6 +269,7 @@ CREATE INDEX idx_ratings_option_created ON ratings(option_id, created_at DESC);
 CREATE INDEX idx_ratings_user ON ratings(user_id);
 CREATE INDEX idx_ratings_guest ON ratings(guest_id);
 CREATE INDEX idx_comments_rating ON comments(rating_id, upvotes DESC);
+CREATE INDEX idx_comments_topic ON comments(topic_id, upvotes DESC);
 CREATE INDEX idx_comments_parent ON comments(parent_id);
 CREATE INDEX idx_notifications_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE;
 CREATE INDEX idx_reports_status ON reports(status) WHERE status = 'pending';
@@ -375,14 +377,37 @@ auth: public | rateLimit: standard
 ### Comments Router
 
 ```typescript
-// comments.reply
+// comments.getForTopic
+input: { topicId: string; sort: 'newest' | 'top'; cursor?: string; limit?: number }
+output: {
+  comments: {
+    id: string; content: string; upvotes: number; downvotes: number;
+    createdAt: string; user: { id: string; username: string } | null;
+    userVote: 'upvote' | 'downvote' | null;
+    replies: (Omit<Comment, 'replies'>)[];
+  }[];
+  nextCursor: string | null;
+}
+auth: public | rateLimit: standard
+
+// comments.create
+input: { topicId: string; content: string; parentId?: string }  // 1-500 chars
+output: { id: string; createdAt: string }
+auth: required | rateLimit: 60/hour
+
+// comments.reply (reply to a rating, max 2-level nesting)
 input: { ratingId: string; parentId?: string; content: string }  // 20-500 chars
-output: { id: string }
+output: { id: string; createdAt: string }
 auth: required | rateLimit: 60/hour
 
 // comments.upvote
 input: { commentId: string }
-output: { upvotes: number }
+output: { success: boolean; upvotes: number; downvotes: number; score: number; userVote: string | null }
+auth: required | rateLimit: 120/hour
+
+// comments.downvote
+input: { commentId: string }
+output: { success: boolean; upvotes: number; downvotes: number; score: number; userVote: string | null }
 auth: required | rateLimit: 120/hour
 ```
 

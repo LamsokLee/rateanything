@@ -539,10 +539,10 @@ export const topicsRouter = router({
           AVG(daily_avg) OVER (PARTITION BY option_id ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::float as running_avg,
           SUM(cnt) OVER (PARTITION BY option_id ORDER BY bucket)::int as cumulative_count
         FROM (
-          SELECT option_id, date_trunc(${bucketSize}, created_at)::text as bucket, AVG(score) as daily_avg, COUNT(*) as cnt
+          SELECT option_id, date_trunc(${sql.raw("'" + bucketSize + "'")}, created_at)::text as bucket, AVG(score) as daily_avg, COUNT(*) as cnt
           FROM ratings
           WHERE option_id IN (${sql.join(optionIds.map(id => sql`${id}`), sql`,`)})
-          GROUP BY option_id, date_trunc(${bucketSize}, created_at)
+          GROUP BY option_id, date_trunc(${sql.raw("'" + bucketSize + "'")}, created_at)
         ) sub
         ORDER BY option_id, bucket ASC`
       );

@@ -4,7 +4,7 @@
  * AuthProvider — Wrapper around Clerk's SignedIn/SignedOut components.
  * Provides a consistent useAuth hook for the rest of the app.
  * Falls back to guest fingerprint for unauthenticated users.
- * Dev-mode bypass: skips Clerk hooks when publishable key is placeholder.
+ * Dev-mode bypass: skips Clerk hooks when publishable key is missing or placeholder.
  *
  * Display name fallback chain (robust for Google/email signups):
  *   Clerk username > fullName > firstName > email local part > "User"
@@ -38,9 +38,13 @@ const AuthContext = createContext<AuthContextValue>({
   isSignedIn: false,
 });
 
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
 /**
- * Detect dev-mode bypass: if NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY contains
- * "placeholder", Clerk is not initialized and we must not call its hooks.
+ * Detect dev-mode bypass: if NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing
+ * or contains "placeholder", Clerk is not initialized and we must not call its hooks.
  */
 function isDevBypass(): boolean {
   const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
@@ -95,7 +99,7 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Guest-only provider for dev-mode bypass */
+/** Guest-only provider for dev-mode bypass (placeholder key) */
 function GuestAuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user: null, isLoading: false, isSignedIn: false }}>
@@ -104,7 +108,7 @@ function GuestAuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: AuthProviderProps) {
   if (isDevBypass()) {
     return <GuestAuthProvider>{children}</GuestAuthProvider>;
   }

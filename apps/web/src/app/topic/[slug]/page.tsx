@@ -1,8 +1,7 @@
 /**
- * Topic detail page — Time-series focused layout.
- * Hero chart (score history) as the main visual, options as a clean
- * leaderboard table with inline compact vote buttons.
- * Feels like a financial comparison chart page (Yahoo Finance).
+ * Topic detail page — Polished comparison dashboard.
+ * Hero chart, ranked options table with aligned columns, per-option
+ * trend sparklines, and inline voting.
  */
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -12,6 +11,7 @@ import { getServerCaller } from "@/lib/server-trpc";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { RatingHistoryChart } from "@/components/RatingHistoryChart";
 import { InlineRatingButtons } from "@/components/InlineRatingButtons";
+import { Sparkline } from "@/components/Sparkline";
 import { CommentSection } from "@/components/CommentSection";
 
 interface TopicPageProps {
@@ -44,6 +44,12 @@ function formatRelativeTime(dateInput: Date | string): string {
   return "just now";
 }
 
+function getRankBadge(index: number): { bg: string; text: string } | null {
+  if (index === 0) return { bg: "#fbbf24", text: "#451a03" }; // gold
+  if (index === 1) return { bg: "#9ca3af", text: "#111827" }; // silver
+  if (index === 2) return { bg: "#b45309", text: "#ffffff" }; // bronze
+  return null;
+}
 
 /** Generate OpenGraph + Twitter meta tags for topic pages */
 export async function generateMetadata({ params }: TopicPageProps): Promise<Metadata> {
@@ -121,25 +127,35 @@ export default async function TopicPage({ params }: TopicPageProps) {
 
   // Map option IDs to chart color index (based on history data order)
   const optionColorMap: Record<string, string> = {};
+  const historyByOption: Record<string, { timestamp: string; avgScore: number; count: number }[]> = {};
   if (historyData) {
     historyData.options.forEach((opt, idx) => {
       optionColorMap[opt.optionId] = CHART_COLORS[idx % CHART_COLORS.length];
+      historyByOption[opt.optionId] = opt.history;
     });
   }
 
   return (
     <div className="space-y-6">
       {/* ─── HEADER ─── */}
-      <header className="space-y-2 border-b border-border/60 pb-5">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
-          <h1 className="text-lg sm:text-xl font-bold text-foreground leading-tight">
-            {topic.title}
-          </h1>
-          <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+      <header className="border border-border/60 rounded-xl bg-card/60 p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+          <div className="space-y-2 min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground leading-tight">
+              {topic.title}
+            </h1>
+            {topic.description && (
+              <p className="text-sm text-subtle leading-relaxed max-w-2xl">
+                {topic.description}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
             {topic.category && (
               <Link
                 href={`/category/${topic.category.slug}`}
-                className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium transition-opacity hover:opacity-80"
+                className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold transition-opacity hover:opacity-80"
                 style={{
                   background: categoryColors.bg,
                   color: categoryColors.text,
@@ -148,12 +164,10 @@ export default async function TopicPage({ params }: TopicPageProps) {
                 {topic.category.name}
               </Link>
             )}
-            <span className="text-subtle/70 hidden sm:inline">•</span>
-            <span className="font-mono">{totalVotes} votes</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-subtle flex-wrap">
+        <div className="mt-4 flex items-center gap-3 text-[11px] text-subtle/70 flex-wrap border-t border-border/40 pt-3">
           {topic.creator && (
             <span className="text-muted-foreground">
               Created by @{topic.creator.username}
@@ -161,70 +175,92 @@ export default async function TopicPage({ params }: TopicPageProps) {
           )}
           {topic.createdAt && (
             <>
-              <span className="text-subtle/50">•</span>
+              <span className="text-subtle/30">•</span>
               <span>{formatRelativeTime(topic.createdAt)}</span>
             </>
           )}
+          <span className="text-subtle/30">•</span>
+          <span className="font-mono">{totalVotes.toLocaleString()} votes</span>
         </div>
-
-        {topic.description && (
-          <p className="text-sm text-subtle max-w-2xl leading-relaxed">
-            {topic.description}
-          </p>
-        )}
       </header>
 
-      {/* ─── HERO CHART ─── */}
-      {historyData && historyData.options.length > 0 && (
-        <section className="border border-border/60 rounded-lg bg-card/90 p-5">
-          <RatingHistoryChart data={historyData.options} />
-        </section>
-      )}
-
       {/* ─── OPTIONS TABLE ─── */}
-      <section>
+      <section className="border border-border/60 rounded-xl bg-card/60 overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/60 bg-card/80">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+              Options
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              Ranked by average rating
+            </span>
+          </div>
+        </div>
+
         {/* Mobile: card layout */}
-        <div className="md:hidden space-y-3">
+        <div className="md:hidden divide-y divide-border/40">
           {sortedOptions.map((option, index) => {
             const score = option.avgRating ?? 0;
             const hasRatings = (option.ratingCount ?? 0) > 0;
             const optColor =
               optionColorMap[option.id] ??
               CHART_COLORS[index % CHART_COLORS.length];
+            const rankBadge = getRankBadge(index);
 
             return (
               <div
                 key={option.id}
-                className="border border-border/60 rounded-lg bg-card/80 p-4 space-y-3"
+                className="p-4 hover:bg-muted/20 transition-colors duration-100"
               >
                 {/* Option header: rank + name */}
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs font-mono text-subtle w-5 text-center">
-                    {index + 1}
-                  </span>
+                <div className="flex items-center gap-3">
+                  {rankBadge ? (
+                    <span
+                      className="flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold shrink-0"
+                      style={{ backgroundColor: rankBadge.bg, color: rankBadge.text }}
+                    >
+                      {index + 1}
+                    </span>
+                  ) : (
+                    <span className="w-6 h-6 flex items-center justify-center text-xs font-mono text-subtle/70 shrink-0">
+                      {index + 1}
+                    </span>
+                  )}
                   <span
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: optColor }}
                   />
-                  <span className="text-sm font-medium text-foreground">
+                  <span className="text-sm font-semibold text-foreground truncate">
                     {option.name}
                   </span>
                 </div>
 
-                {/* Score + votes row */}
-                <div className="flex items-center justify-between pl-7">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-foreground">
-                      {hasRatings ? score.toFixed(1) : "\u2014"}
-                    </span>
-                    <span className="font-mono text-xs text-subtle">
-                      {option.ratingCount ?? 0} votes
-                    </span>
+                {/* Score + votes + trend row */}
+                <div className="flex items-center justify-between mt-3 pl-9">
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col">
+                      <span className="font-mono text-sm font-bold text-foreground">
+                        {hasRatings ? score.toFixed(1) : "\u2014"}
+                      </span>
+                      <span className="font-mono text-[10px] text-subtle/50">
+                        {option.ratingCount ?? 0} votes
+                      </span>
+                    </div>
                   </div>
+                  {historyByOption[option.id]?.length >= 2 && (
+                    <Sparkline
+                      data={historyByOption[option.id]}
+                      color={optColor}
+                      width={72}
+                      height={24}
+                      showArea
+                      showTrendIndicator={false}
+                    />
+                  )}
                 </div>
 
                 {/* Vote buttons */}
-                <div className="pl-7">
+                <div className="mt-3 pl-9">
                   <InlineRatingButtons
                     optionId={option.id}
                     currentUserRating={option.userRating}
@@ -236,14 +272,14 @@ export default async function TopicPage({ params }: TopicPageProps) {
         </div>
 
         {/* Desktop: table layout */}
-        <div className="hidden md:block border border-border/60 rounded-lg overflow-hidden">
+        <div className="hidden md:block">
           {/* Table header */}
-          <div className="grid grid-cols-[2.5rem_1fr_4.5rem_4.5rem_auto] gap-3 items-center px-4 py-2.5 bg-card border-b border-border/60 text-[11px] uppercase tracking-wider font-medium text-subtle">
-            <span>#</span>
+          <div className="grid grid-cols-[2.5rem_1fr_5rem_6rem_19.5rem] gap-3 items-center px-5 py-3 bg-card/80 border-b border-border/60 text-[10px] uppercase tracking-wider font-semibold text-subtle/70">
+            <span className="text-center">#</span>
             <span>Option</span>
             <span className="text-right">Score</span>
-            <span className="text-right">Votes</span>
-            <span className="text-center">Your Vote</span>
+            <span className="text-right">Trend</span>
+            <span className="text-center">Your Rating</span>
           </div>
 
           {/* Table rows */}
@@ -253,37 +289,67 @@ export default async function TopicPage({ params }: TopicPageProps) {
             const optColor =
               optionColorMap[option.id] ??
               CHART_COLORS[index % CHART_COLORS.length];
+            const rankBadge = getRankBadge(index);
+            const history = historyByOption[option.id];
 
             return (
               <div
                 key={option.id}
-                className="grid grid-cols-[2.5rem_1fr_4.5rem_4.5rem_auto] gap-3 items-center px-4 py-3 border-b border-border/40 last:border-b-0 hover:bg-muted/20 transition-colors duration-100"
+                className="grid grid-cols-[2.5rem_1fr_5rem_6rem_19.5rem] gap-3 items-center px-5 py-3.5 border-b border-border/30 last:border-b-0 hover:bg-muted/20 transition-colors duration-100"
               >
                 {/* Rank */}
-                <span className="text-xs font-mono text-subtle/70">
-                  {index + 1}
-                </span>
+                <div className="flex justify-center">
+                  {rankBadge ? (
+                    <span
+                      className="flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold"
+                      style={{ backgroundColor: rankBadge.bg, color: rankBadge.text }}
+                    >
+                      {index + 1}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-mono text-subtle/70">
+                      {index + 1}
+                    </span>
+                  )}
+                </div>
 
                 {/* Option name with color dot */}
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <span
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: optColor }}
                   />
-                  <span className="text-sm text-foreground truncate">
+                  <span className="text-sm font-medium text-foreground truncate">
                     {option.name}
                   </span>
                 </div>
 
                 {/* Score */}
-                <span className="text-right font-mono text-sm font-semibold text-foreground">
-                  {hasRatings ? score.toFixed(1) : "\u2014"}
-                </span>
+                <div className="text-right">
+                  <span className="font-mono text-sm font-bold text-foreground">
+                    {hasRatings ? score.toFixed(1) : "\u2014"}
+                  </span>
+                  <span className="block font-mono text-[10px] text-subtle/60">
+                    {(option.ratingCount ?? 0).toLocaleString()} votes
+                  </span>
+                </div>
 
-                {/* Vote count */}
-                <span className="text-right font-mono text-xs text-subtle">
-                  {option.ratingCount ?? 0}
-                </span>
+                {/* Trend sparkline */}
+                <div className="flex justify-end">
+                  {history && history.length >= 2 ? (
+                    <Sparkline
+                      data={history}
+                      color={optColor}
+                      width={76}
+                      height={22}
+                      showArea
+                      showTrendIndicator={false}
+                    />
+                  ) : (
+                    <span className="text-[10px] text-subtle/50 font-mono">—</span>
+                  )}
+                </div>
+
 
                 {/* Inline vote buttons */}
                 <div className="flex justify-center">
@@ -297,6 +363,27 @@ export default async function TopicPage({ params }: TopicPageProps) {
           })}
         </div>
       </section>
+
+      {/* ─── SCORE HISTORY (collapsible) ─── */}
+      {historyData && historyData.options.length > 0 && (
+        <details className="border border-border/60 rounded-xl bg-card/90 group">
+          <summary className="flex items-center gap-2 px-5 py-4 cursor-pointer select-none text-sm font-semibold text-foreground uppercase tracking-wide hover:bg-muted/20 transition-colors duration-100 list-none [&::-webkit-details-marker]:hidden">
+            <svg
+              className="w-4 h-4 text-subtle/70 transition-transform duration-200 group-open:rotate-90"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            Score history
+          </summary>
+          <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-0">
+            <RatingHistoryChart data={historyData.options} />
+          </div>
+        </details>
+      )}
 
       {/* ─── COMMENT SECTION ─── */}
       <CommentSection topicId={topic.id} />

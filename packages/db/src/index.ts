@@ -23,10 +23,27 @@ if (!connectionString) {
 }
 
 /**
- * postgres.js client for query execution.
- * max: 10 keeps connection pool reasonable for development.
+ * Use a global singleton so Next.js dev hot reloads don't spawn a new
+ * postgres.js pool on every module evaluation. Without this, each reload
+ * leaks 10 connections and eventually exhausts Postgres.
  */
-const client = postgres(connectionString, { max: 10 });
+const globalForDb = globalThis as unknown as {
+  __rateanythingDbClient?: ReturnType<typeof postgres>;
+};
+
+const client =
+  globalForDb.__rateanythingDbClient ??
+  postgres(connectionString, {
+    // Small pool in dev (default 10 is overkill and exhausts connections
+    // quickly when modules reload). In production, slightly larger.
+    max: process.env.NODE_ENV === "production" ? 10 : 3,
+    // Close idle connections faster in dev so the pool doesn't hold slots.
+    idle_timeout: process.env.NODE_ENV === "production" ? 30 : 10,
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForDb.__rateanythingDbClient = client;
+}
 
 /** Drizzle ORM instance with full schema for relational queries */
 export const db = drizzle(client, { schema });

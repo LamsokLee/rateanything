@@ -35,7 +35,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  
+
   // Get initial auth state for SSR hydration (only when Clerk is active)
   let initialState: InitialState | undefined = undefined;
   if (publishableKey && !publishableKey.includes("placeholder")) {
@@ -56,7 +56,10 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <ClerkProviderClient publishableKey={publishableKey} initialState={initialState}>
+          <ClerkProviderClient
+            publishableKey={publishableKey}
+            initialState={initialState}
+          >
             <AuthProvider>
               <nav className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-sm">
                 <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 gap-3">
@@ -72,6 +75,13 @@ export default async function RootLayout({
                   </div>
 
                   <div className="flex items-center gap-2 sm:gap-3">
+                    <Link
+                      href="/create"
+                      className="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-accent-foreground hover:bg-accent transition-colors"
+                    >
+                      <span className="hidden sm:inline">+ Create Topic</span>
+                      <span className="sm:hidden">+</span>
+                    </Link>
                     <ThemeToggle />
                     <NavAuth />
                   </div>

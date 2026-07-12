@@ -308,12 +308,14 @@ Once the platform has enough data to identify actual manipulation (not hypotheti
 #### Option Card Components
 Each option within a topic is its own card with:
 - **Option name** (e.g., "LeBron James")
-- **Average score** (weighted, live-updated)
+- **Average score** (live-updated)
 - **Total ratings count**
 - **Distribution histogram** (10-bar visualization)
-- **Top 2-3 comments** (highest engagement)
-- **Rate button** (opens rating modal)
-- **"View all comments"** link (expands to full thread)
+- **Rate button** (inline 1-10 buttons)
+- **User's own rating** (highlighted if rated)
+
+#### Discussion Section (Below Options)
+All comments for the topic appear in a single thread below all options. Each comment shows the option the user rated and their score.
 
 #### Sorting
 - **Topic-level**: By option average (highest to lowest), or alphabetical
@@ -321,22 +323,22 @@ Each option within a topic is its own card with:
 
 ### 4.4 Comment/Debate System
 
-#### Per-Option Threading
-Each option has its own comment thread. Comments are tied to a specific rating on a specific option.
+#### Per-Topic Threading
+Each topic has its own comment thread. Comments are tied to a specific rating on a specific option within a topic.
 
 **Threading Model:**
-- User rates "LeBron James" option → writes comment → comment appears in LeBron's thread
-- Comments are **option-scoped** (not topic-scoped)
+- User rates "LeBron James" option → writes comment → comment appears in the topic's thread
+- Comments are **topic-scoped** (not option-scoped)
 - 2-level nesting (comment + replies)
 - Replies sorted by "Best" (engagement-weighted)
 - Collapsible threads
 - Highlight OP replies (creator of topic)
 
-#### Example Comment Thread
+#### Example Comment Thread (Topic-Scoped)
 ```
-Option: LeBron James — 8.5/10
+Topic: Lakers vs Warriors G7
 
-💀 @contrarian rated 2/10
+💀 @contrarian rated LeBron James 2/10
 "Overrated, he missed 3 clutch FTs and 
  turned the ball over 4 times. Playoff 
  LeBron is a myth."
@@ -355,7 +357,7 @@ Option: LeBron James — 8.5/10
      series vs 73% career. Within variance."
      312 👍  1h ago
 
-🔥 @fanboy rated 9/10
+🔥 @fanboy rated LeBron James 9/10
 "Carried the whole team. Without him 
  this is a 20-win team."
 1.8K 👍  312 💬  4h ago
@@ -971,7 +973,7 @@ options (id, topic_id, name, description, image_url, sort_order,
 ratings (id, user_id, guest_id, option_id, score, comment, tags, 
          created_at, updated_at, is_edited)
 
--- Comments (replies to ratings, option-scoped)
+-- Comments (replies to ratings, topic-scoped)
 comments (id, user_id, rating_id, parent_id, content, upvotes, created_at)
 
 -- Categories
@@ -1315,7 +1317,7 @@ admin_actions (id, admin_id, action_type, target_type, target_id, reason, create
 | **Topic** | A container with options to rate (e.g., "Rate Lakers vs Warriors G7") |
 | **Option** | A specific item within a topic that can be rated (e.g., "LeBron James") |
 | **Rating** | A 1-10 score + comment on an option |
-| **Comment** | A reply to a rating (option-scoped) |
+| **Comment** | A reply to a rating (topic-scoped) |
 | **Distribution** | Histogram of all ratings on an option |
 | **Controversy Score** | Variance metric indicating polarization |
 | **Hot Take** | A deliberately provocative or contrarian opinion |

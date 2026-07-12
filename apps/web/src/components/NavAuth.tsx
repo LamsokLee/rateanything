@@ -6,8 +6,8 @@ import { useAuth } from "./AuthProvider";
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 
 /**
- * Detect dev-mode bypass: if NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY contains
- * "placeholder", Clerk is not initialized and we must not call its hooks/components.
+ * Detect dev-mode bypass: if NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing
+ * or contains "placeholder", Clerk is not initialized and we must not call its hooks/components.
  */
 function isDevBypass(): boolean {
   const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
@@ -100,7 +100,7 @@ function ProfileIcon() {
   );
 }
 
-/** Guest-only NavAuth for dev-mode bypass */
+/** Guest-only NavAuth for dev-mode bypass (placeholder key) */
 function NavAuthGuest() {
   return (
     <span className="text-xs text-subtle">Guest Mode</span>

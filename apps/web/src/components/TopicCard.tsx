@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * TopicCard — Polymarket-inspired market card with mini sparkline,
- * top options with progress bars, urgency signals, and hover preview.
+ * TopicCard — Polymarket-inspired market card with top options with progress bars,
+ * urgency signals, and hover preview.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Sparkline } from "@/components/Sparkline";
 
 interface TopicCardProps {
   topic: {
@@ -59,27 +58,6 @@ function isTrendingFast(trendingScore: number | null, totalRatings: number): boo
   return (trendingScore !== null && trendingScore > 5) || totalRatings > 20;
 }
 
-/** Generate fake sparkline data based on the score (deterministic from topic id) */
-function generateSparklineData(topicId: string, currentScore: number): number[] {
-  let seed = 0;
-  for (let i = 0; i < topicId.length; i++) {
-    seed = ((seed << 5) - seed + topicId.charCodeAt(i)) | 0;
-  }
-  const pseudoRandom = () => {
-    seed = (seed * 1664525 + 1013904223) | 0;
-    return (seed >>> 16) / 65536;
-  };
-
-  const points: number[] = [];
-  const baseScore = Math.max(1, currentScore - 1.5);
-  for (let i = 0; i < 7; i++) {
-    const variation = (pseudoRandom() - 0.5) * 2;
-    points.push(Math.min(10, Math.max(1, baseScore + variation + (i / 6) * 1.5)));
-  }
-  points[points.length - 1] = currentScore;
-  return points;
-}
-
 /** Find the most divisive option for the tooltip preview */
 function getMostDivisivePreview(options: { name: string; avgRating: number }[]): string | null {
   if (options.length < 2) return null;
@@ -102,8 +80,6 @@ export function TopicCard({ topic, featured = false }: TopicCardProps) {
   const topOptions = topic.topOptions ?? [];
   const displayCount = featured ? 5 : 3;
   const displayOptions = topOptions.slice(0, displayCount);
-  const topScore = topOptions[0]?.avgRating ?? 0;
-  const sparklineData = topScore > 0 ? generateSparklineData(topic.id, topScore) : [];
 
   const isNew = isNewTopic(topic.createdAt);
   const isTrending = isTrendingFast(topic.trendingScore, topic.totalRatings);
@@ -124,7 +100,7 @@ export function TopicCard({ topic, featured = false }: TopicCardProps) {
       />
 
       <div className={`${featured ? "p-5" : "p-4"} pl-5`}>
-        {/* Header: category pill + urgency pills + sparkline */}
+        {/* Header: category pill + urgency pills */}
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {topic.categoryName && topic.categorySlug && (
@@ -158,16 +134,6 @@ export function TopicCard({ topic, featured = false }: TopicCardProps) {
               </span>
             )}
           </div>
-          {sparklineData.length >= 2 && (
-            <Sparkline
-              data={sparklineData}
-              color={colors.text}
-              width={featured ? 80 : 60}
-              height={featured ? 28 : 20}
-              strokeWidth={1.5}
-              className="shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
-            />
-          )}
         </div>
 
         {/* Title — #7 font-semibold for punch */}
