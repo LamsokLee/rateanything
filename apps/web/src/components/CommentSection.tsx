@@ -20,7 +20,8 @@ interface CommentData {
   downvotes: number;
   createdAt: Date | string;
   user: CommentUser | null;
-  replies: Omit<CommentData, "replies">[];
+  userVote: "upvote" | "downvote" | null;
+  replies: (Omit<CommentData, "replies">)[];
 }
 
 interface CommentSectionProps {
@@ -145,25 +146,49 @@ export function CommentSection({ topicId }: CommentSectionProps) {
   const handleVote = useCallback(async (commentId: string, direction: "up" | "down") => {
     if (!user) return;
 
+    const voteDirection = direction === "up" ? "upvote" : "downvote";
+
+    // Compute optimistic update based on current vote state
+    const applyOptimistic = (comment: { upvotes: number; downvotes: number; userVote: "upvote" | "downvote" | null }) => {
+      const currentVote = comment.userVote;
+      let { upvotes, downvotes } = comment;
+      let newUserVote: "upvote" | "downvote" | null;
+
+      if (currentVote === voteDirection) {
+        // Toggle off: remove existing vote
+        if (voteDirection === "upvote") upvotes--;
+        else downvotes--;
+        newUserVote = null;
+      } else if (currentVote !== null) {
+        // Switch direction: remove old, add new
+        if (currentVote === "upvote") upvotes--;
+        else downvotes--;
+        if (voteDirection === "upvote") upvotes++;
+        else downvotes++;
+        newUserVote = voteDirection;
+      } else {
+        // New vote
+        if (voteDirection === "upvote") upvotes++;
+        else downvotes++;
+        newUserVote = voteDirection;
+      }
+
+      return { upvotes, downvotes, userVote: newUserVote };
+    };
+
     // Optimistic update
     setCommentsList((prev) =>
       prev.map((c) => {
         if (c.id === commentId) {
-          return {
-            ...c,
-            upvotes: direction === "up" ? c.upvotes + 1 : c.upvotes,
-            downvotes: direction === "down" ? c.downvotes + 1 : c.downvotes,
-          };
+          const updated = applyOptimistic(c);
+          return { ...c, ...updated };
         }
         return {
           ...c,
           replies: c.replies.map((r) => {
             if (r.id === commentId) {
-              return {
-                ...r,
-                upvotes: direction === "up" ? r.upvotes + 1 : r.upvotes,
-                downvotes: direction === "down" ? r.downvotes + 1 : r.downvotes,
-              };
+              const updated = applyOptimistic(r);
+              return { ...r, ...updated };
             }
             return r;
           }),
@@ -173,13 +198,40 @@ export function CommentSection({ topicId }: CommentSectionProps) {
 
     const endpoint = direction === "up" ? "comments.upvote" : "comments.downvote";
     try {
-      await fetch(`/api/trpc/${endpoint}`, {
+      const res = await fetch(`/api/trpc/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ json: { commentId } }),
       });
+
+      if (res.ok) {
+        // Apply server-authoritative counts
+        const data = await res.json();
+        const result = data.result?.data?.json;
+        if (result) {
+          setCommentsList((prev) =>
+            prev.map((c) => {
+              if (c.id === commentId) {
+                return { ...c, upvotes: result.upvotes, downvotes: result.downvotes, userVote: result.userVote };
+              }
+              return {
+                ...c,
+                replies: c.replies.map((r) => {
+                  if (r.id === commentId) {
+                    return { ...r, upvotes: result.upvotes, downvotes: result.downvotes, userVote: result.userVote };
+                  }
+                  return r;
+                }),
+              };
+            })
+          );
+        }
+      } else {
+        // Revert on error by refetching
+        fetchComments(sort);
+      }
     } catch {
       // Revert on error by refetching
       fetchComments(sort);
@@ -336,7 +388,7 @@ function CommentCard({
   onReply,
   isReply = false,
 }: {
-  comment: { id: string; content: string; upvotes: number; downvotes: number; createdAt: Date | string; user: CommentUser | null };
+  comment: { id: string; content: string; upvotes: number; downvotes: number; createdAt: Date | string; user: CommentUser | null; userVote?: "upvote" | "downvote" | null };
   user: { id: string; username: string | null } | null;
   onVote: (commentId: string, direction: "up" | "down") => void;
   onReply?: () => void;
@@ -362,7 +414,7 @@ function CommentCard({
         <button
           onClick={() => user && onVote(comment.id, "up")}
           disabled={!user}
-          className="flex items-center gap-1 text-[11px] text-subtle hover:text-green-400 transition-colors disabled:cursor-default disabled:hover:text-subtle"
+          className={`flex items-center gap-1 text-[11px] transition-colors disabled:cursor-default disabled:hover:text-subtle ${comment.userVote === "upvote" ? "text-green-400" : "text-subtle hover:text-green-400"}`}
           aria-label="Upvote"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,7 +426,7 @@ function CommentCard({
         <button
           onClick={() => user && onVote(comment.id, "down")}
           disabled={!user}
-          className="flex items-center gap-1 text-[11px] text-subtle hover:text-red-400 transition-colors disabled:cursor-default disabled:hover:text-subtle"
+          className={`flex items-center gap-1 text-[11px] transition-colors disabled:cursor-default disabled:hover:text-subtle ${comment.userVote === "downvote" ? "text-red-400" : "text-subtle hover:text-red-400"}`}
           aria-label="Downvote"
         >
           <svg className="w-3.5 h-3.5 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">

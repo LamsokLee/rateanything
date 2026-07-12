@@ -8,8 +8,31 @@ import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { rateLimit } from "../rate-limit";
 import {
   db, comments, users, ratings, topics, commentVotes,
-  eq, and, sql, desc, asc,
+  eq, and, sql, desc, asc, count,
 } from "@rateanything/db";
+
+
+/** Recompute comment vote counts from the comment_votes source-of-truth table */
+async function recomputeCommentVotes(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], commentId: string) {
+  const [counts] = await tx
+    .select({
+      upvotes: count(sql`CASE WHEN ${commentVotes.vote} = 'upvote' THEN 1 END`),
+      downvotes: count(sql`CASE WHEN ${commentVotes.vote} = 'downvote' THEN 1 END`),
+    })
+    .from(commentVotes)
+    .where(eq(commentVotes.commentId, commentId));
+
+  const up = Number(counts?.upvotes ?? 0);
+  const down = Number(counts?.downvotes ?? 0);
+
+  const [updated] = await tx
+    .update(comments)
+    .set({ upvotes: up, downvotes: down, score: up - down })
+    .where(eq(comments.id, commentId))
+    .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
+
+  return updated;
+}
 
 export const commentsRouter = router({
   /** Get comments for a topic with nested replies (2-level) */
@@ -20,8 +43,9 @@ export const commentsRouter = router({
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(50).default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { topicId, sort, cursor, limit } = input;
+      const currentUserId = ctx.auth?.dbUserId ?? null;
 
       let cursorCondition = sql`TRUE`;
       if (cursor) {
@@ -104,6 +128,27 @@ export const commentsRouter = router({
         }
       }
 
+      // Fetch current user's votes for these comments (if authenticated)
+      const allCommentIds = [...parentIds];
+      for (const replies of Object.values(repliesMap)) {
+        for (const r of replies) allCommentIds.push(r.id);
+      }
+
+      let userVotesMap: Record<string, string> = {};
+      if (currentUserId && allCommentIds.length > 0) {
+        const idsLiteral2 = sql.join(allCommentIds.map(id => sql`${id}`), sql`, `);
+        const userVotes = await db
+          .select({ commentId: commentVotes.commentId, vote: commentVotes.vote })
+          .from(commentVotes)
+          .where(and(
+            eq(commentVotes.userId, currentUserId),
+            sql`${commentVotes.commentId} IN (${idsLiteral2})`
+          ));
+        for (const v of userVotes) {
+          userVotesMap[v.commentId] = v.vote;
+        }
+      }
+
       return {
         comments: topLevelComments.map((c) => ({
           id: c.id,
@@ -112,6 +157,7 @@ export const commentsRouter = router({
           downvotes: c.downvotes ?? 0,
           createdAt: c.createdAt,
           user: c.userId ? { id: c.userId, username: c.username } : null,
+          userVote: userVotesMap[c.id] ?? null,
           replies: (repliesMap[c.id] ?? []).map((r) => ({
             id: r.id,
             content: r.content,
@@ -119,6 +165,7 @@ export const commentsRouter = router({
             downvotes: r.downvotes ?? 0,
             createdAt: r.createdAt,
             user: r.userId ? { id: r.userId, username: r.username } : null,
+            userVote: userVotesMap[r.id] ?? null,
           })),
         })),
         nextCursor,
@@ -261,65 +308,48 @@ export const commentsRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Comment not found" });
       }
 
-      // Check existing vote
-      const [existing] = await db
-        .select({ vote: commentVotes.vote })
-        .from(commentVotes)
-        .where(and(
-          eq(commentVotes.userId, userId),
-          eq(commentVotes.commentId, input.commentId)
-        ))
-        .limit(1);
-
-      if (existing?.vote === 'upvote') {
-        // Toggle off: remove upvote
-        await db
-          .delete(commentVotes)
+      return await db.transaction(async (tx) => {
+        // Check existing vote
+        const [existing] = await tx
+          .select({ vote: commentVotes.vote })
+          .from(commentVotes)
           .where(and(
             eq(commentVotes.userId, userId),
             eq(commentVotes.commentId, input.commentId)
-          ));
-        const [updated] = await db
-          .update(comments)
-          .set({ upvotes: sql`${comments.upvotes} - 1`, score: sql`${comments.upvotes} - 1 - ${comments.downvotes}` })
-          .where(eq(comments.id, input.commentId))
-          .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-        return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote: null };
-      }
+          ))
+          .limit(1);
 
-      if (existing?.vote === 'downvote') {
-        // Switch from downvote to upvote
-        await db
-          .update(commentVotes)
-          .set({ vote: 'upvote' })
-          .where(and(
-            eq(commentVotes.userId, userId),
-            eq(commentVotes.commentId, input.commentId)
-          ));
-        const [updated] = await db
-          .update(comments)
-          .set({
-            upvotes: sql`${comments.upvotes} + 1`,
-            downvotes: sql`${comments.downvotes} - 1`,
-            score: sql`${comments.upvotes} + 1 - (${comments.downvotes} - 1)`,
-          })
-          .where(eq(comments.id, input.commentId))
-          .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-        return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote: 'upvote' };
-      }
+        let userVote: string | null = 'upvote';
 
-      // New upvote
-      await db
-        .insert(commentVotes)
-        .values({ userId, commentId: input.commentId, vote: 'upvote' });
+        if (existing?.vote === 'upvote') {
+          // Toggle off: remove upvote
+          await tx
+            .delete(commentVotes)
+            .where(and(
+              eq(commentVotes.userId, userId),
+              eq(commentVotes.commentId, input.commentId)
+            ));
+          userVote = null;
+        } else if (existing?.vote === 'downvote') {
+          // Switch from downvote to upvote
+          await tx
+            .update(commentVotes)
+            .set({ vote: 'upvote' })
+            .where(and(
+              eq(commentVotes.userId, userId),
+              eq(commentVotes.commentId, input.commentId)
+            ));
+        } else {
+          // New upvote
+          await tx
+            .insert(commentVotes)
+            .values({ userId, commentId: input.commentId, vote: 'upvote' });
+        }
 
-      const [updated] = await db
-        .update(comments)
-        .set({ upvotes: sql`${comments.upvotes} + 1`, score: sql`${comments.upvotes} + 1 - ${comments.downvotes}` })
-        .where(eq(comments.id, input.commentId))
-        .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-
-      return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote: 'upvote' };
+        // Recompute from source of truth
+        const updated = await recomputeCommentVotes(tx, input.commentId);
+        return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote };
+      });
     }),
 
   /** Downvote a comment — prevents duplicate votes, allows toggle */
@@ -341,64 +371,47 @@ export const commentsRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Comment not found" });
       }
 
-      // Check existing vote
-      const [existing] = await db
-        .select({ vote: commentVotes.vote })
-        .from(commentVotes)
-        .where(and(
-          eq(commentVotes.userId, userId),
-          eq(commentVotes.commentId, input.commentId)
-        ))
-        .limit(1);
-
-      if (existing?.vote === 'downvote') {
-        // Toggle off: remove downvote
-        await db
-          .delete(commentVotes)
+      return await db.transaction(async (tx) => {
+        // Check existing vote
+        const [existing] = await tx
+          .select({ vote: commentVotes.vote })
+          .from(commentVotes)
           .where(and(
             eq(commentVotes.userId, userId),
             eq(commentVotes.commentId, input.commentId)
-          ));
-        const [updated] = await db
-          .update(comments)
-          .set({ downvotes: sql`${comments.downvotes} - 1`, score: sql`${comments.upvotes} - (${comments.downvotes} - 1)` })
-          .where(eq(comments.id, input.commentId))
-          .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-        return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote: null };
-      }
+          ))
+          .limit(1);
 
-      if (existing?.vote === 'upvote') {
-        // Switch from upvote to downvote
-        await db
-          .update(commentVotes)
-          .set({ vote: 'downvote' })
-          .where(and(
-            eq(commentVotes.userId, userId),
-            eq(commentVotes.commentId, input.commentId)
-          ));
-        const [updated] = await db
-          .update(comments)
-          .set({
-            upvotes: sql`${comments.upvotes} - 1`,
-            downvotes: sql`${comments.downvotes} + 1`,
-            score: sql`(${comments.upvotes} - 1) - (${comments.downvotes} + 1)`,
-          })
-          .where(eq(comments.id, input.commentId))
-          .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-        return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote: 'downvote' };
-      }
+        let userVote: string | null = 'downvote';
 
-      // New downvote
-      await db
-        .insert(commentVotes)
-        .values({ userId, commentId: input.commentId, vote: 'downvote' });
+        if (existing?.vote === 'downvote') {
+          // Toggle off: remove downvote
+          await tx
+            .delete(commentVotes)
+            .where(and(
+              eq(commentVotes.userId, userId),
+              eq(commentVotes.commentId, input.commentId)
+            ));
+          userVote = null;
+        } else if (existing?.vote === 'upvote') {
+          // Switch from upvote to downvote
+          await tx
+            .update(commentVotes)
+            .set({ vote: 'downvote' })
+            .where(and(
+              eq(commentVotes.userId, userId),
+              eq(commentVotes.commentId, input.commentId)
+            ));
+        } else {
+          // New downvote
+          await tx
+            .insert(commentVotes)
+            .values({ userId, commentId: input.commentId, vote: 'downvote' });
+        }
 
-      const [updated] = await db
-        .update(comments)
-        .set({ downvotes: sql`${comments.downvotes} + 1`, score: sql`${comments.upvotes} - (${comments.downvotes} + 1)` })
-        .where(eq(comments.id, input.commentId))
-        .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-
-      return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote: 'downvote' };
+        // Recompute from source of truth
+        const updated = await recomputeCommentVotes(tx, input.commentId);
+        return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote };
+      });
     }),
 });
