@@ -10,7 +10,7 @@
  */
 import { getRedisClient } from "./redis";
 
-const DEFAULT_TTL = 60; // seconds
+const MAX_CACHE_SIZE = 100_000; // 100KB max per cached value
 
 /**
  * Build a deterministic cache key from procedure name and input arguments.
@@ -66,7 +66,7 @@ export async function getCached<T>(
   try {
     const serialized = JSON.stringify(data);
     // Only cache if result is under 100KB (Redis limit sanity check)
-    if (serialized.length < 100_000) {
+    if (serialized.length < MAX_CACHE_SIZE) {
       redis.setex(key, ttl, serialized).catch(() => {});
     }
   } catch (err) {
