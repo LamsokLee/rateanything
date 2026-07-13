@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { TopicCard } from "@/components/TopicCard";
+import { TopicCardSkeleton } from "@/components/Skeleton";
 
 interface SearchResult {
   id: string;
@@ -120,8 +121,8 @@ export default function SearchPageContent() {
       {/* Results */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-32 rounded-lg bg-muted/50 animate-pulse" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <TopicCardSkeleton key={i} />
           ))}
         </div>
       ) : hasSearched ? (

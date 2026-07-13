@@ -42,16 +42,19 @@ describe('InlineRatingButtons', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
-  it('renders 10 rating buttons with correct aria labels', () => {
+  it('renders 10 rating buttons with correct aria labels', async () => {
     mockedUseAuth.mockReturnValue({ user: { id: 'u1', displayName: 'Test', username: 'test' }, isLoading: false, isSignedIn: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) }));
 
     render(
       <InlineRatingButtons optionId="opt1" currentUserRating={null} />
     );
 
-    for (let i = 1; i <= 10; i++) {
-      expect(screen.getByRole('button', { name: `Rate ${i} out of 10` })).toBeInTheDocument();
-    }
+    await waitFor(() => {
+      for (let i = 1; i <= 10; i++) {
+        expect(screen.getByRole('button', { name: `Rate ${i} out of 10` })).toBeInTheDocument();
+      }
+    });
   });
 
   it('highlights the current user rating button', () => {
@@ -74,6 +77,10 @@ describe('InlineRatingButtons', () => {
     render(
       <InlineRatingButtons optionId="opt1" currentUserRating={null} onScoreUpdate={onScoreUpdate} />
     );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rate 8 out of 10' })).toBeInTheDocument();
+    });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Rate 8 out of 10' }));
@@ -131,6 +138,10 @@ describe('InlineRatingButtons', () => {
       <InlineRatingButtons optionId="opt1" currentUserRating={null} />
     );
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rate 3 out of 10' })).toBeInTheDocument();
+    });
+
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Rate 3 out of 10' }));
 
@@ -175,6 +186,10 @@ describe('InlineRatingButtons', () => {
     render(
       <InlineRatingButtons optionId="opt1" currentUserRating={null} />
     );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rate 6 out of 10' })).toBeInTheDocument();
+    });
 
     const user = userEvent.setup();
     const btn6 = screen.getByRole('button', { name: 'Rate 6 out of 10' });

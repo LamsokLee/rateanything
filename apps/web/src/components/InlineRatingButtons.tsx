@@ -10,6 +10,7 @@
  */
 import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "./AuthProvider";
+import { RatingButtonsSkeleton } from "./Skeleton";
 
 interface InlineRatingButtonsProps {
   optionId: string;
@@ -29,7 +30,7 @@ export function InlineRatingButtons({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [justVoted, setJustVoted] = useState(false);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(currentUserRating !== null);
 
   useEffect(() => {
     setUserRating(currentUserRating);
@@ -160,6 +161,10 @@ export function InlineRatingButtons({
     },
     [optionId, userRating, isSubmitting, onVoteSuccess, onScoreUpdate, user]
   );
+
+  if (authLoading || !mounted) {
+    return <RatingButtonsSkeleton />;
+  }
 
   return (
     <div className="relative">

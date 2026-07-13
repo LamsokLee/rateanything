@@ -78,6 +78,10 @@ describe('OptionRow', () => {
     expect(screen.getByText('8.3')).toBeInTheDocument();
     expect(screen.getByText('15 votes')).toBeInTheDocument();
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Rate 9 out of 10' })).toBeInTheDocument();
+    });
+
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Rate 9 out of 10' }));
 
