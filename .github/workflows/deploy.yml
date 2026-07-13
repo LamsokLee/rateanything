@@ -37,10 +37,14 @@ jobs:
             echo "Error: VERCEL_PROJECT_ID secret not set"
             exit 1
           fi
+          if [ -z "$REDIS_URL" ]; then
+            echo "Warning: REDIS_URL secret not set — cache will be disabled"
+          fi
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
 
       - name: Run DB migrations via Supabase Edge Function
         run: |
@@ -56,6 +60,21 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
+      - name: Set Vercel environment variables
+        run: |
+          if [ -n "$REDIS_URL" ]; then
+            echo "Setting REDIS_URL in Vercel..."
+            # Remove existing env var first to avoid conflicts, then add new one
+            vercel env rm REDIS_URL production --yes --token "${{ secrets.VERCEL_TOKEN }}" 2>/dev/null || true
+            echo "$REDIS_URL" | vercel env add REDIS_URL production --yes --token "${{ secrets.VERCEL_TOKEN }}"
+            echo "REDIS_URL set in Vercel production environment"
+          fi
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+
       - name: Deploy to Vercel (Production)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}"
@@ -63,6 +82,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
 
       - name: Deploy to Vercel (Preview)
         if: github.event_name == 'pull_request'
@@ -71,3 +91,4 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}

@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { getCached } from "../cache";
 import {
   db, users, follows, badges, userBadges, ratings, comments, options, topics, categories,
   eq, and, sql, desc,
@@ -31,44 +32,52 @@ export const usersRouter = router({
   getProfile: publicProcedure
     .input(z.object({ username: z.string() }))
     .query(async ({ ctx: _ctx, input }) => {
-      const [user] = await db
-        .select({
-          id: users.id,
-          username: users.username,
-          avatarUrl: users.avatarUrl,
-          bio: users.bio,
-          location: users.location,
-          isVerified: users.isVerified,
-          reputation: users.reputation,
-          ratingCount: users.ratingCount,
-          followerCount: users.followerCount,
-          followingCount: users.followingCount,
-          createdAt: users.createdAt,
-        })
-        .from(users)
-        .where(eq(users.username, input.username))
-        .limit(1);
+      const result = await getCached(
+        "users.getProfile",
+        input,
+        300, // 5 minutes TTL — profiles don't change often
+        async () => {
+          const [user] = await db
+            .select({
+              id: users.id,
+              username: users.username,
+              avatarUrl: users.avatarUrl,
+              bio: users.bio,
+              location: users.location,
+              isVerified: users.isVerified,
+              reputation: users.reputation,
+              ratingCount: users.ratingCount,
+              followerCount: users.followerCount,
+              followingCount: users.followingCount,
+              createdAt: users.createdAt,
+            })
+            .from(users)
+            .where(eq(users.username, input.username))
+            .limit(1);
 
-      if (!user) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
-      }
+          if (!user) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+          }
 
-      const userBadgeList = await db
-        .select({
-          id: badges.id,
-          name: badges.name,
-          description: badges.description,
-          icon: badges.icon,
-          awardedAt: userBadges.awardedAt,
-        })
-        .from(userBadges)
-        .innerJoin(badges, eq(userBadges.badgeId, badges.id))
-        .where(eq(userBadges.userId, user.id));
+          const userBadgeList = await db
+            .select({
+              id: badges.id,
+              name: badges.name,
+              description: badges.description,
+              icon: badges.icon,
+              awardedAt: userBadges.awardedAt,
+            })
+            .from(userBadges)
+            .innerJoin(badges, eq(userBadges.badgeId, badges.id))
+            .where(eq(userBadges.userId, user.id));
 
-      return {
-        ...user,
-        badges: userBadgeList,
-      };
+          return {
+            ...user,
+            badges: userBadgeList,
+          };
+        }
+      );
+      return result.data;
     }),
 
   /** Get a user's rating history with pagination */

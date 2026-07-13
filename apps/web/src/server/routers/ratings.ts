@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { getCached, invalidateCache } from "../cache";
 import { rateLimit } from "../rate-limit";
 import {
   db, ratings, options, users, guests,
@@ -218,6 +219,11 @@ export const ratingsRouter = router({
         };
       });
 
+      // Invalidate caches since ratings changed the data
+      await invalidateCache("topics.getBySlug:*");
+      await invalidateCache("topics.trending:*");
+      await invalidateCache("ratings.getForOption:*");
+
       return result;
     }),
 
@@ -362,6 +368,11 @@ export const ratingsRouter = router({
         };
       });
 
+      // Invalidate caches since rating removal changed the data
+      await invalidateCache("topics.getBySlug:*");
+      await invalidateCache("topics.trending:*");
+      await invalidateCache("ratings.getForOption:*");
+
       return result;
     }),
 
@@ -374,98 +385,106 @@ export const ratingsRouter = router({
       cursor: z.string().optional(),
     }))
     .query(async ({ ctx: _ctx, input }) => {
-      const { optionId, sort, limit, cursor } = input;
+      const result = await getCached(
+        "ratings.getForOption",
+        input,
+        60, // 1 minute TTL
+        async () => {
+          const { optionId, sort, limit, cursor } = input;
 
-      const conditions = [eq(ratings.optionId, optionId)];
+          const conditions = [eq(ratings.optionId, optionId)];
 
-      // Decode cursor for keyset pagination
-      if (cursor) {
-        const decoded = JSON.parse(Buffer.from(cursor, "base64").toString());
-        if (sort === "newest") {
-          conditions.push(
-            sql`(${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`
-          );
-        } else if (sort === "hot") {
-          // Hot sort uses score DESC then createdAt DESC
-          conditions.push(
-            sql`(${ratings.score}, ${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}, ${decoded.sortValue2}::timestamptz, ${decoded.id})`
-          );
-        } else {
-          // Controversial uses createdAt for cursor (ordering is computed)
-          conditions.push(
-            sql`(${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`
-          );
+          // Decode cursor for keyset pagination
+          if (cursor) {
+            const decoded = JSON.parse(Buffer.from(cursor, "base64").toString());
+            if (sort === "newest") {
+              conditions.push(
+                sql`(${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`
+              );
+            } else if (sort === "hot") {
+              // Hot sort uses score DESC then createdAt DESC
+              conditions.push(
+                sql`(${ratings.score}, ${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}, ${decoded.sortValue2}::timestamptz, ${decoded.id})`
+              );
+            } else {
+              // Controversial uses createdAt for cursor (ordering is computed)
+              conditions.push(
+                sql`(${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`
+              );
+            }
+          }
+
+          // Build ORDER BY clause based on sort type
+          let orderByClause;
+          if (sort === "newest") {
+            orderByClause = [desc(ratings.createdAt), desc(ratings.id)];
+          } else if (sort === "hot") {
+            orderByClause = [desc(ratings.score), desc(ratings.createdAt), desc(ratings.id)];
+          } else {
+            // Controversial: ratings furthest from average score for this option
+            const [avgResult] = await db
+              .select({ avg: sql<number>`COALESCE(AVG(${ratings.score})::real, 5)` })
+              .from(ratings)
+              .where(eq(ratings.optionId, optionId));
+            const avg = avgResult?.avg ?? 5;
+            orderByClause = [sql`ABS(${ratings.score} - ${avg}) DESC`, desc(ratings.id)];
+          }
+
+          const results = await db
+            .select({
+              id: ratings.id,
+              score: ratings.score,
+              comment: ratings.comment,
+              tags: ratings.tags,
+              isEdited: ratings.isEdited,
+              createdAt: ratings.createdAt,
+              userId: users.id,
+              username: users.username,
+              avatarUrl: users.avatarUrl,
+              isVerified: users.isVerified,
+            })
+            .from(ratings)
+            .leftJoin(users, eq(ratings.userId, users.id))
+            .where(and(...conditions))
+            .orderBy(...orderByClause)
+            .limit(limit + 1);
+
+          // Build nextCursor
+          let nextCursor: string | null = null;
+          if (results.length > limit) {
+            const lastItem = results[limit - 1];
+            if (sort === "hot") {
+              nextCursor = Buffer.from(
+                JSON.stringify({ id: lastItem.id, sortValue: lastItem.score, sortValue2: lastItem.createdAt })
+              ).toString("base64");
+            } else {
+              nextCursor = Buffer.from(
+                JSON.stringify({ id: lastItem.id, sortValue: lastItem.createdAt })
+              ).toString("base64");
+            }
+            results.pop();
+          }
+
+          return {
+            ratings: results.map((r) => ({
+              id: r.id,
+              score: r.score,
+              comment: r.comment,
+              tags: r.tags,
+              isEdited: r.isEdited,
+              createdAt: r.createdAt,
+              user: r.userId ? {
+                id: r.userId,
+                username: r.username,
+                avatarUrl: r.avatarUrl,
+                isVerified: r.isVerified,
+              } : null,
+            })),
+            nextCursor,
+          };
         }
-      }
-
-      // Build ORDER BY clause based on sort type
-      let orderByClause;
-      if (sort === "newest") {
-        orderByClause = [desc(ratings.createdAt), desc(ratings.id)];
-      } else if (sort === "hot") {
-        orderByClause = [desc(ratings.score), desc(ratings.createdAt), desc(ratings.id)];
-      } else {
-        // Controversial: ratings furthest from average score for this option
-        const [avgResult] = await db
-          .select({ avg: sql<number>`COALESCE(AVG(${ratings.score})::real, 5)` })
-          .from(ratings)
-          .where(eq(ratings.optionId, optionId));
-        const avg = avgResult?.avg ?? 5;
-        orderByClause = [sql`ABS(${ratings.score} - ${avg}) DESC`, desc(ratings.id)];
-      }
-
-      const results = await db
-        .select({
-          id: ratings.id,
-          score: ratings.score,
-          comment: ratings.comment,
-          tags: ratings.tags,
-          isEdited: ratings.isEdited,
-          createdAt: ratings.createdAt,
-          userId: users.id,
-          username: users.username,
-          avatarUrl: users.avatarUrl,
-          isVerified: users.isVerified,
-        })
-        .from(ratings)
-        .leftJoin(users, eq(ratings.userId, users.id))
-        .where(and(...conditions))
-        .orderBy(...orderByClause)
-        .limit(limit + 1);
-
-      // Build nextCursor
-      let nextCursor: string | null = null;
-      if (results.length > limit) {
-        const lastItem = results[limit - 1];
-        if (sort === "hot") {
-          nextCursor = Buffer.from(
-            JSON.stringify({ id: lastItem.id, sortValue: lastItem.score, sortValue2: lastItem.createdAt })
-          ).toString("base64");
-        } else {
-          nextCursor = Buffer.from(
-            JSON.stringify({ id: lastItem.id, sortValue: lastItem.createdAt })
-          ).toString("base64");
-        }
-        results.pop();
-      }
-
-      return {
-        ratings: results.map((r) => ({
-          id: r.id,
-          score: r.score,
-          comment: r.comment,
-          tags: r.tags,
-          isEdited: r.isEdited,
-          createdAt: r.createdAt,
-          user: r.userId ? {
-            id: r.userId,
-            username: r.username,
-            avatarUrl: r.avatarUrl,
-            isVerified: r.isVerified,
-          } : null,
-        })),
-        nextCursor,
-      };
+      );
+      return result.data;
     }),
 
   /** Get the current (logged-in) user's rating for a specific option */

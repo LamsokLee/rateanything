@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { getCached, invalidateCache } from "../cache";
 import { rateLimit } from "../rate-limit";
 import {
   db, comments, users, ratings, topics, commentVotes,
@@ -22,140 +23,148 @@ export const commentsRouter = router({
       limit: z.number().int().min(1).max(50).default(20),
     }))
     .query(async ({ input, ctx }) => {
-      const { topicId, sort, cursor, limit } = input;
-      const currentUserId = ctx.auth?.dbUserId ?? null;
+      const result = await getCached(
+        "comments.getForTopic",
+        input,
+        30, // 30s TTL — comments change frequently
+        async () => {
+          const { topicId, sort, cursor, limit } = input;
+          const currentUserId = ctx.auth?.dbUserId ?? null;
 
-      let cursorCondition = sql`TRUE`;
-      if (cursor) {
-        const decoded = JSON.parse(Buffer.from(cursor, "base64").toString());
-        if (sort === "newest") {
-          cursorCondition = sql`(${comments.createdAt}, ${comments.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`;
-        } else {
-          cursorCondition = sql`(${comments.upvotes} - ${comments.downvotes}, ${comments.createdAt}, ${comments.id}) < (${decoded.sortValue}, ${decoded.sortValue2}::timestamptz, ${decoded.id})`;
-        }
-      }
-
-      const orderBy = sort === "newest"
-        ? [desc(comments.createdAt), desc(comments.id)]
-        : [sql`(${comments.upvotes} - ${comments.downvotes}) DESC`, desc(comments.createdAt), desc(comments.id)];
-
-      const topLevelComments = await db
-        .select({
-          id: comments.id,
-          content: comments.content,
-          upvotes: comments.upvotes,
-          downvotes: comments.downvotes,
-          createdAt: comments.createdAt,
-          isDeleted: comments.isDeleted,
-          commentUserId: comments.userId,
-          userId: users.id,
-          username: users.username,
-        })
-        .from(comments)
-        .leftJoin(users, eq(comments.userId, users.id))
-        .where(and(eq(comments.topicId, topicId), sql`${comments.parentId} IS NULL`, cursorCondition))
-        .orderBy(...orderBy)
-        .limit(limit + 1);
-
-      let nextCursor: string | null = null;
-      if (topLevelComments.length > limit) {
-        const lastItem = topLevelComments[limit - 1];
-        if (sort === "newest") {
-          nextCursor = Buffer.from(
-            JSON.stringify({ id: lastItem.id, sortValue: lastItem.createdAt })
-          ).toString("base64");
-        } else {
-          nextCursor = Buffer.from(
-            JSON.stringify({
-              id: lastItem.id,
-              sortValue: (lastItem.upvotes ?? 0) - (lastItem.downvotes ?? 0),
-              sortValue2: lastItem.createdAt,
-            })
-          ).toString("base64");
-        }
-        topLevelComments.pop();
-      }
-
-      // Fetch replies for all top-level comments
-      const parentIds = topLevelComments.map((c) => c.id);
-      type ReplyRow = (typeof topLevelComments)[number] & { parentId: string | null };
-      const repliesMap: Record<string, ReplyRow[]> = {};
-
-      if (parentIds.length > 0) {
-        const idsLiteral = sql.join(parentIds.map(id => sql`${id}`), sql`, `);
-        const replies = await db
-          .select({
-            id: comments.id,
-            parentId: comments.parentId,
-            content: comments.content,
-            upvotes: comments.upvotes,
-            downvotes: comments.downvotes,
-            createdAt: comments.createdAt,
-            isDeleted: comments.isDeleted,
-            commentUserId: comments.userId,
-            userId: users.id,
-            username: users.username,
-          })
-          .from(comments)
-          .leftJoin(users, eq(comments.userId, users.id))
-          .where(sql`${comments.parentId} IN (${idsLiteral})`)
-          .orderBy(asc(comments.createdAt));
-
-        for (const reply of replies) {
-          const pid = reply.parentId ?? "";
-          if (!repliesMap[pid]) {
-            repliesMap[pid] = [];
+          let cursorCondition = sql`TRUE`;
+          if (cursor) {
+            const decoded = JSON.parse(Buffer.from(cursor, "base64").toString());
+            if (sort === "newest") {
+              cursorCondition = sql`(${comments.createdAt}, ${comments.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`;
+            } else {
+              cursorCondition = sql`(${comments.upvotes} - ${comments.downvotes}, ${comments.createdAt}, ${comments.id}) < (${decoded.sortValue}, ${decoded.sortValue2}::timestamptz, ${decoded.id})`;
+            }
           }
-          repliesMap[pid].push(reply);
+
+          const orderBy = sort === "newest"
+            ? [desc(comments.createdAt), desc(comments.id)]
+            : [sql`(${comments.upvotes} - ${comments.downvotes}) DESC`, desc(comments.createdAt), desc(comments.id)];
+
+          const topLevelComments = await db
+            .select({
+              id: comments.id,
+              content: comments.content,
+              upvotes: comments.upvotes,
+              downvotes: comments.downvotes,
+              createdAt: comments.createdAt,
+              isDeleted: comments.isDeleted,
+              commentUserId: comments.userId,
+              userId: users.id,
+              username: users.username,
+            })
+            .from(comments)
+            .leftJoin(users, eq(comments.userId, users.id))
+            .where(and(eq(comments.topicId, topicId), sql`${comments.parentId} IS NULL`, cursorCondition))
+            .orderBy(...orderBy)
+            .limit(limit + 1);
+
+          let nextCursor: string | null = null;
+          if (topLevelComments.length > limit) {
+            const lastItem = topLevelComments[limit - 1];
+            if (sort === "newest") {
+              nextCursor = Buffer.from(
+                JSON.stringify({ id: lastItem.id, sortValue: lastItem.createdAt })
+              ).toString("base64");
+            } else {
+              nextCursor = Buffer.from(
+                JSON.stringify({
+                  id: lastItem.id,
+                  sortValue: (lastItem.upvotes ?? 0) - (lastItem.downvotes ?? 0),
+                  sortValue2: lastItem.createdAt,
+                })
+              ).toString("base64");
+            }
+            topLevelComments.pop();
+          }
+
+          // Fetch replies for all top-level comments
+          const parentIds = topLevelComments.map((c) => c.id);
+          type ReplyRow = (typeof topLevelComments)[number] & { parentId: string | null };
+          const repliesMap: Record<string, ReplyRow[]> = {};
+
+          if (parentIds.length > 0) {
+            const idsLiteral = sql.join(parentIds.map(id => sql`${id}`), sql`, `);
+            const replies = await db
+              .select({
+                id: comments.id,
+                parentId: comments.parentId,
+                content: comments.content,
+                upvotes: comments.upvotes,
+                downvotes: comments.downvotes,
+                createdAt: comments.createdAt,
+                isDeleted: comments.isDeleted,
+                commentUserId: comments.userId,
+                userId: users.id,
+                username: users.username,
+              })
+              .from(comments)
+              .leftJoin(users, eq(comments.userId, users.id))
+              .where(sql`${comments.parentId} IN (${idsLiteral})`)
+              .orderBy(asc(comments.createdAt));
+
+            for (const reply of replies) {
+              const pid = reply.parentId ?? "";
+              if (!repliesMap[pid]) {
+                repliesMap[pid] = [];
+              }
+              repliesMap[pid].push(reply);
+            }
+          }
+
+          // Fetch current user's votes for these comments (if authenticated)
+          const allCommentIds = [...parentIds];
+          for (const replies of Object.values(repliesMap)) {
+            for (const r of replies) allCommentIds.push(r.id);
+          }
+
+          let userVotesMap: Record<string, string> = {};
+          if (currentUserId && allCommentIds.length > 0) {
+            const idsLiteral2 = sql.join(allCommentIds.map(id => sql`${id}`), sql`, `);
+            const userVotes = await db
+              .select({ commentId: commentVotes.commentId, vote: commentVotes.vote })
+              .from(commentVotes)
+              .where(and(
+                eq(commentVotes.userId, currentUserId),
+                sql`${commentVotes.commentId} IN (${idsLiteral2})`
+              ));
+            for (const v of userVotes) {
+              userVotesMap[v.commentId] = v.vote;
+            }
+          }
+
+          return {
+            comments: topLevelComments.map((c) => ({
+              id: c.id,
+              content: c.content,
+              upvotes: c.upvotes ?? 0,
+              downvotes: c.downvotes ?? 0,
+              createdAt: c.createdAt,
+              isDeleted: c.isDeleted,
+              isOwner: currentUserId != null && c.commentUserId === currentUserId,
+              user: c.userId ? { id: c.userId, username: c.username } : null,
+              userVote: userVotesMap[c.id] ?? null,
+              replies: (repliesMap[c.id] ?? []).map((r) => ({
+                id: r.id,
+                content: r.content,
+                upvotes: r.upvotes ?? 0,
+                downvotes: r.downvotes ?? 0,
+                createdAt: r.createdAt,
+                isDeleted: r.isDeleted,
+                isOwner: currentUserId != null && r.commentUserId === currentUserId,
+                user: r.userId ? { id: r.userId, username: r.username } : null,
+                userVote: userVotesMap[r.id] ?? null,
+              })),
+            })),
+            nextCursor,
+          };
         }
-      }
-
-      // Fetch current user's votes for these comments (if authenticated)
-      const allCommentIds = [...parentIds];
-      for (const replies of Object.values(repliesMap)) {
-        for (const r of replies) allCommentIds.push(r.id);
-      }
-
-      let userVotesMap: Record<string, string> = {};
-      if (currentUserId && allCommentIds.length > 0) {
-        const idsLiteral2 = sql.join(allCommentIds.map(id => sql`${id}`), sql`, `);
-        const userVotes = await db
-          .select({ commentId: commentVotes.commentId, vote: commentVotes.vote })
-          .from(commentVotes)
-          .where(and(
-            eq(commentVotes.userId, currentUserId),
-            sql`${commentVotes.commentId} IN (${idsLiteral2})`
-          ));
-        for (const v of userVotes) {
-          userVotesMap[v.commentId] = v.vote;
-        }
-      }
-
-      return {
-        comments: topLevelComments.map((c) => ({
-          id: c.id,
-          content: c.content,
-          upvotes: c.upvotes ?? 0,
-          downvotes: c.downvotes ?? 0,
-          createdAt: c.createdAt,
-          isDeleted: c.isDeleted,
-          isOwner: currentUserId != null && c.commentUserId === currentUserId,
-          user: c.userId ? { id: c.userId, username: c.username } : null,
-          userVote: userVotesMap[c.id] ?? null,
-          replies: (repliesMap[c.id] ?? []).map((r) => ({
-            id: r.id,
-            content: r.content,
-            upvotes: r.upvotes ?? 0,
-            downvotes: r.downvotes ?? 0,
-            createdAt: r.createdAt,
-            isDeleted: r.isDeleted,
-            isOwner: currentUserId != null && r.commentUserId === currentUserId,
-            user: r.userId ? { id: r.userId, username: r.username } : null,
-            userVote: userVotesMap[r.id] ?? null,
-          })),
-        })),
-        nextCursor,
-      };
+      );
+      return result.data;
     }),
 
   /** Create a new comment on a topic (top-level or reply) */
@@ -220,6 +229,13 @@ export const commentsRouter = router({
 
         return { id: newComment.id, createdAt: newComment.createdAt };
       });
+
+      // Invalidate comment caches for this topic
+      await invalidateCache(`comments.getForTopic:*"topicId":"${input.topicId}"*`);
+      // Also invalidate the topic detail page (lastActivity changed)
+      await invalidateCache("topics.getBySlug:*");
+      // Invalidate trending since trending score changed
+      await invalidateCache("topics.trending:*");
 
       return result;
     }),
