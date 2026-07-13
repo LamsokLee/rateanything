@@ -221,7 +221,7 @@ export const commentsRouter = router({
           })
           .returning({ id: comments.id, createdAt: comments.createdAt });
 
-        // Recalculate trending score on comment activity (DESIGN.md §7)
+        // Recalculate trending score on comment activity (docs/DESIGN.md §7)
         // Formula: total_ratings / (hours_since_last_activity + 2)^1.5
         // Reset lastActivity to NOW() so hours_since_last_activity = 0 on this write
         await tx

@@ -207,7 +207,7 @@ export const ratingsRouter = router({
           .set({
             totalRatings: topicStats.totalRatings,
             lastActivity: sql`NOW()`,
-            // Trending formula (DESIGN.md §7): score = total_ratings / (hours_since_last_activity + 2)^1.5
+            // Trending formula (docs/DESIGN.md §7): score = total_ratings / (hours_since_last_activity + 2)^1.5
             // On write, hours_since_last_activity resets to 0 since lastActivity = NOW()
             trendingScore: sql`${topicStats.totalRatings}::real / POWER(2, 1.5)`,
           })

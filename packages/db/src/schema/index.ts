@@ -9,8 +9,6 @@ export * from './options.js';
 export * from './ratings.js';
 export * from './comments.js';
 export * from './follows.js';
-export * from './notifications.js';
 export * from './reports.js';
 export * from './badges.js';
-export * from './collections.js';
 export * from './comment-votes.js';

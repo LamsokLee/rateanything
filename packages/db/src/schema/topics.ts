@@ -4,7 +4,7 @@
  */
 import {
   pgTable, pgEnum, uuid, varchar, text, integer, boolean,
-  real, timestamp, index, uniqueIndex,
+  real, timestamp, index,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { categories } from './categories.js';
@@ -45,7 +45,7 @@ export const topics = pgTable('topics', {
   trgmIdx: index('idx_topics_trgm').using('gin', sql`title gin_trgm_ops`),
 }));
 
-export const topicsRelations = relations(topics, ({ one, many }) => ({
+export const topicsRelations = relations(topics, ({ one }) => ({
   category: one(categories, {
     fields: [topics.categoryId],
     references: [categories.id],

@@ -52,7 +52,7 @@ export const moderationRouter = router({
             )
           );
 
-        // Auto-hide at >= 5 distinct flags (see DESIGN.md Section 11)
+        // Auto-hide at >= 5 distinct flags (see docs/DESIGN.md Section 11)
         if (reportCount >= 5) {
           if (input.targetType === 'topic') {
             await tx

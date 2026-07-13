@@ -8,7 +8,7 @@ import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { rateLimit } from "../rate-limit";
 import {
   db, topics, options, categories, users, ratings,
-  eq, and, sql, lt, desc, asc, inArray,
+  eq, and, sql, desc, asc, inArray,
 } from "@rateanything/db";
 import { slugify } from "@/lib/slugify";
 

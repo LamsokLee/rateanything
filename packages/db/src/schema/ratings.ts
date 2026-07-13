@@ -5,7 +5,7 @@
  * Unique constraints prevent duplicate ratings per user/guest per option.
  */
 import {
-  pgTable, uuid, varchar, text, smallint, boolean, timestamp,
+  pgTable, uuid, text, smallint, boolean, timestamp,
   index, unique, check,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';

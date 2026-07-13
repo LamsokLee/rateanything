@@ -118,23 +118,3 @@ export function AuthProvider({ children }: AuthProviderProps) {
 export function useAuth(): AuthContextValue {
   return useContext(AuthContext);
 }
-
-/** Generate a simple browser fingerprint for guest ratings */
-export function getFingerprint(): string {
-  if (typeof window === "undefined") return "server";
-  const nav = window.navigator;
-  const raw = [
-    nav.userAgent,
-    nav.language,
-    new Date().getTimezoneOffset().toString(),
-    screen.width.toString(),
-    screen.height.toString(),
-  ].join("|");
-  let hash = 0;
-  for (let i = 0; i < raw.length; i++) {
-    const char = raw.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
-}

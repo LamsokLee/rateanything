@@ -3,16 +3,14 @@ import { useId } from "react";
 /**
  * Sparkline — Mini trend chart for inline display in tables/cards.
  * Shows score history as a small line, no axes, just the shape.
- * Supports either raw numeric points or full HistoryPoint objects.
  */
 interface HistoryPoint {
   timestamp: string;
   avgScore: number;
   count: number;
 }
-type SparklineData = HistoryPoint | number;
 interface SparklineProps {
-  data: SparklineData[];
+  data: HistoryPoint[];
   color: string;
   width?: number;
   height?: number;
@@ -20,18 +18,6 @@ interface SparklineProps {
   className?: string;
   showArea?: boolean;
   showTrendIndicator?: boolean;
-}
-function normalizeData(data: SparklineData[]): HistoryPoint[] {
-  return data.map((d, i) => {
-    if (typeof d === "number") {
-      return {
-        timestamp: new Date(Date.now() - (data.length - 1 - i) * 24 * 60 * 60 * 1000).toISOString(),
-        avgScore: d,
-        count: 0,
-      };
-    }
-    return d;
-  });
 }
 export function Sparkline({
   data,
@@ -43,8 +29,7 @@ export function Sparkline({
   showArea = true,
   showTrendIndicator = true,
 }: SparklineProps) {
-  const normalized = normalizeData(data);
-  if (normalized.length < 2) {
+  if (data.length < 2) {
     return (
       <span
         className={`inline-block text-[10px] text-subtle/50 ${className}`}
@@ -54,15 +39,15 @@ export function Sparkline({
       </span>
     );
   }
-  const scores = normalized.map((d) => d.avgScore);
+  const scores = data.map((d) => d.avgScore);
   const minScore = Math.min(...scores);
   const maxScore = Math.max(...scores);
   const scoreRange = maxScore - minScore || 1;
   const padding = 2;
   const chartW = width - padding * 2;
   const chartH = height - padding * 2;
-  const points = normalized.map((d, i) => {
-    const x = padding + (i / (normalized.length - 1)) * chartW;
+  const points = data.map((d, i) => {
+    const x = padding + (i / (data.length - 1)) * chartW;
     const y = padding + chartH - ((d.avgScore - minScore) / scoreRange) * chartH;
     return { x, y, score: d.avgScore };
   });
@@ -74,8 +59,8 @@ export function Sparkline({
       ? `${linePathD} L ${points[points.length - 1].x.toFixed(1)} ${height - padding} L ${points[0].x.toFixed(1)} ${height - padding} Z`
       : null;
   // Trend: compare last point to first
-  const firstScore = normalized[0].avgScore;
-  const lastScore = normalized[normalized.length - 1].avgScore;
+  const firstScore = data[0].avgScore;
+  const lastScore = data[data.length - 1].avgScore;
   const trend = lastScore - firstScore;
   const reactId = useId(); const gradientId = `sparkline-gradient${reactId}`;
   return (

@@ -7,6 +7,7 @@ import Link from "next/link";
 import "@/styles/globals.css";
 import { NavSearch } from "@/components/NavSearch";
 import { NavAuth } from "@/components/NavAuth";
+import { NavCreateButton } from "@/components/NavCreateButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ClerkProviderClient } from "@/components/ClerkProviderClient";
 import { AuthProvider } from "@/components/AuthProvider";
@@ -75,13 +76,8 @@ export default async function RootLayout({
                   </div>
 
                   <div className="flex items-center gap-2 sm:gap-3">
-                    <Link
-                      href="/create"
-                      className="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-accent-foreground hover:bg-accent transition-colors"
-                    >
-                      <span className="hidden sm:inline">+ Create Topic</span>
-                      <span className="sm:hidden">+</span>
-                    </Link>
+                    <NavCreateButton />
+
                     <ThemeToggle />
                     <NavAuth />
                   </div>

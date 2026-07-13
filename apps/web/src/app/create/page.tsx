@@ -5,7 +5,6 @@
  */
 import { redirect } from "next/navigation";
 import { safeAuth } from "@/lib/safe-auth";
-import { getServerCaller } from "@/lib/server-trpc";
 import { CreateTopicForm } from "./CreateTopicForm";
 import { db, categories as categoriesTable, asc } from "@rateanything/db";
 
