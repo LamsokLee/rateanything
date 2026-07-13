@@ -3,7 +3,7 @@
  * Each option belongs to a topic and tracks its own aggregate rating stats.
  */
 import {
-  pgTable, uuid, varchar, text, integer, real, timestamp, index, unique,
+  pgTable, uuid, varchar, text, integer, bigint, real, timestamp, index, unique,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { topics } from './topics.js';
@@ -17,6 +17,7 @@ export const options = pgTable('options', {
   sortOrder: integer('sort_order').default(0).notNull(),
   avgRating: real('avg_rating').default(0).notNull(),
   ratingCount: integer('rating_count').default(0).notNull(),
+  ratingSum: bigint("rating_sum", { mode: "number" }).default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   /** Unique constraint: no duplicate option names within a topic */

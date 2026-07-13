@@ -1,14 +1,14 @@
 /**
  * Ratings router — submit and retrieve ratings for options.
  */
-import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
-import { router, publicProcedure, protectedProcedure } from '../trpc';
-import { rateLimit } from '../rate-limit';
+import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { rateLimit } from "../rate-limit";
 import {
   db, ratings, options, topics, users, guests,
   eq, and, sql, desc,
-} from '@rateanything/db';
+} from "@rateanything/db";
 
 export const ratingsRouter = router({
   /** Submit a rating for an option (auth or guest fingerprint required) */
@@ -32,7 +32,7 @@ export const ratingsRouter = router({
         .limit(1);
 
       if (!option) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Option not found' });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Option not found" });
       }
 
       // Determine if rating as authenticated user or guest
@@ -48,7 +48,7 @@ export const ratingsRouter = router({
           .limit(1);
 
         if (!user) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+          throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
         }
         userId = user.id;
       } else if (guestFingerprint) {
@@ -70,13 +70,12 @@ export const ratingsRouter = router({
         }
       } else {
         throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Authentication or guest fingerprint required',
+          code: "BAD_REQUEST",
+          message: "Authentication or guest fingerprint required",
         });
       }
 
-      // Perform upsert + synchronous score recalculation in a single transaction.
-      // This replaces the intended async BullMQ recalculation (workers never ran).
+      // Perform upsert + O(1) incremental score update in a single transaction.
       const result = await db.transaction(async (tx) => {
         // Guest rate-limit: max 3 distinct topics (changing vote on already-rated topic is OK)
         if (guestId) {
@@ -111,11 +110,31 @@ export const ratingsRouter = router({
           }
         }
 
-        // Upsert rating: INSERT ON CONFLICT UPDATE for same user+option or guest+option
-        let ratingId: string;
-
+        // Determine if this is a NEW rating or a RE-RATE by checking for existing row
+        let oldScore: number | null = null;
         if (userId) {
-          // Upsert for authenticated user
+          const [existing] = await tx
+            .select({ score: ratings.score })
+            .from(ratings)
+            .where(and(eq(ratings.userId, userId), eq(ratings.optionId, optionId)))
+            .limit(1);
+          oldScore = existing?.score ?? null;
+        } else {
+          const [existing] = await tx
+            .select({ score: ratings.score })
+            .from(ratings)
+            .where(and(eq(ratings.guestId, guestId!), eq(ratings.optionId, optionId)))
+            .limit(1);
+          oldScore = existing?.score ?? null;
+        }
+
+        const isNew = oldScore === null;
+        const delta = isNew ? score : (score - oldScore);
+        const incCount = isNew ? 1 : 0;
+
+        // Upsert the rating row
+        let ratingId: string;
+        if (userId) {
           const [upserted] = await tx
             .insert(ratings)
             .values({
@@ -137,21 +156,7 @@ export const ratingsRouter = router({
             })
             .returning({ id: ratings.id });
           ratingId = upserted.id;
-
-          // Sync user ratingCount from source-of-truth (self-healing, handles insert + re-rate)
-          const [userStats] = await tx
-            .select({
-              count: sql<number>`COUNT(*)::int`,
-            })
-            .from(ratings)
-            .where(eq(ratings.userId, userId!));
-
-          await tx
-            .update(users)
-            .set({ ratingCount: userStats.count })
-            .where(eq(users.id, userId!));
         } else {
-          // Upsert for guest
           const [upserted] = await tx
             .insert(ratings)
             .values({
@@ -175,48 +180,185 @@ export const ratingsRouter = router({
           ratingId = upserted.id;
         }
 
-        // Synchronous recalculation: recompute option-level stats from ratings table
-        const [stats] = await tx
-          .select({
-            newAvg: sql<number>`COALESCE(AVG(${ratings.score})::real, 0)`,
-            newCount: sql<number>`COUNT(*)::int`,
-          })
-          .from(ratings)
-          .where(eq(ratings.optionId, optionId));
+        // Atomic O(1) option counter update — uses column self-references for concurrency safety
+        const [updatedOption] = await tx
+          .execute(sql`
+            UPDATE options
+            SET rating_count = rating_count + ${incCount},
+                rating_sum = rating_sum + ${delta},
+                avg_rating = (rating_sum + ${delta})::real / NULLIF(rating_count + ${incCount}, 0)
+            WHERE id = ${optionId}
+            RETURNING avg_rating, rating_count
+          `);
 
-        // Update the option with fresh aggregated values
+        // Atomic O(1) topic counter update — increment totalRatings, refresh trending
         await tx
-          .update(options)
-          .set({
-            avgRating: stats.newAvg,
-            ratingCount: stats.newCount,
-          })
-          .where(eq(options.id, optionId));
+          .execute(sql`
+            UPDATE topics
+            SET total_ratings = total_ratings + ${incCount},
+                last_activity = NOW(),
+                trending_score = (total_ratings + ${incCount})::real / POWER(2, 1.5)
+            WHERE id = ${option.topicId}
+          `);
 
-        // Recalculate topic-level totalRatings (sum of all options' ratingCounts for this topic)
-        // READ COMMITTED txn: reads-own-writes is correct per-txn; concurrent commits may leave topic sum marginally stale — acceptable.
-        const [topicStats] = await tx
-          .select({
-            totalRatings: sql<number>`COALESCE(SUM(${options.ratingCount})::int, 0)`,
-          })
-          .from(options)
-          .where(eq(options.topicId, option.topicId));
-
-        await tx
-          .update(topics)
-          .set({
-            totalRatings: topicStats.totalRatings,
-            lastActivity: sql`NOW()`,
-            // Trending formula (docs/DESIGN.md §7): score = total_ratings / (hours_since_last_activity + 2)^1.5
-            // On write, hours_since_last_activity resets to 0 since lastActivity = NOW()
-            trendingScore: sql`${topicStats.totalRatings}::real / POWER(2, 1.5)`,
-          })
-          .where(eq(topics.id, option.topicId));
+        // Atomic O(1) user ratingCount update (authenticated only, new ratings only)
+        if (userId && isNew) {
+          await tx
+            .execute(sql`
+              UPDATE users
+              SET rating_count = rating_count + 1
+              WHERE id = ${userId}
+            `);
+        }
 
         return {
           id: ratingId,
-          optionAvgRating: stats.newAvg,
-          optionRatingCount: stats.newCount,
+          optionAvgRating: Number(updatedOption.avg_rating),
+          optionRatingCount: Number(updatedOption.rating_count),
+        };
+      });
+
+      return result;
+    }),
+
+  /** Remove (cancel) a rating — inverse of submit with atomic counter decrements */
+  remove: publicProcedure
+    .use(rateLimit("ratings.remove", 30, 3600))
+    .input(z.object({
+      optionId: z.string().uuid(),
+      guestFingerprint: z.string().max(64).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { optionId, guestFingerprint } = input;
+
+      // Verify the option exists
+      const [option] = await db
+        .select({ id: options.id, topicId: options.topicId, avgRating: options.avgRating, ratingCount: options.ratingCount })
+        .from(options)
+        .where(eq(options.id, optionId))
+        .limit(1);
+
+      if (!option) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Option not found" });
+      }
+
+      // Determine if removing as authenticated user or guest
+      let userId: string | null = null;
+      let guestId: string | null = null;
+
+      if (ctx.auth?.userId) {
+        // Authenticated user - look up internal user ID
+        const [user] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.clerkId, ctx.auth.userId))
+          .limit(1);
+
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        }
+        userId = user.id;
+      } else if (guestFingerprint) {
+        // Guest user - find guest record (do NOT create one on remove)
+        const [existingGuest] = await db
+          .select({ id: guests.id })
+          .from(guests)
+          .where(eq(guests.fingerprintHash, guestFingerprint))
+          .limit(1);
+
+        if (existingGuest) {
+          guestId = existingGuest.id;
+        } else {
+          // No guest record exists — nothing to remove (idempotent)
+          return {
+            optionAvgRating: Number(option.avgRating ?? 0),
+            optionRatingCount: Number(option.ratingCount),
+          };
+        }
+      } else {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Authentication or guest fingerprint required",
+        });
+      }
+
+      // Perform delete + inverse O(1) decremental counter update in a single transaction
+      const result = await db.transaction(async (tx) => {
+        // Find the existing rating row for this caller + option
+        let existingRating: { id: string; score: number } | undefined;
+        if (userId) {
+          const [found] = await tx
+            .select({ id: ratings.id, score: ratings.score })
+            .from(ratings)
+            .where(and(eq(ratings.userId, userId), eq(ratings.optionId, optionId)))
+            .limit(1);
+          existingRating = found;
+        } else {
+          const [found] = await tx
+            .select({ id: ratings.id, score: ratings.score })
+            .from(ratings)
+            .where(and(eq(ratings.guestId, guestId!), eq(ratings.optionId, optionId)))
+            .limit(1);
+          existingRating = found;
+        }
+
+        // IDEMPOTENT: if no existing rating, just return current option stats (double-cancel safe)
+        if (!existingRating) {
+          const [currentOption] = await tx
+            .select({ avgRating: options.avgRating, ratingCount: options.ratingCount })
+            .from(options)
+            .where(eq(options.id, optionId))
+            .limit(1);
+          return {
+            optionAvgRating: Number(currentOption?.avgRating ?? 0),
+            optionRatingCount: Number(currentOption?.ratingCount ?? 0),
+          };
+        }
+
+        const oldScore = existingRating.score;
+
+        // Delete the rating row
+        await tx
+          .execute(sql`DELETE FROM ratings WHERE id = ${existingRating.id}`);
+
+        // Inverse atomic O(1) option counter update — uses column self-references for concurrency safety.
+        // GREATEST guards on rating_sum and denominator mirror rating_count guard: prevents
+        // negative sum or divide-by-negative avg if counters ever drift out of sync.
+        // COALESCE(..., 0) guard: when the last rating is removed, count-1=0 so NULLIF yields NULL;
+        // since avg_rating is NOT NULL, we must coalesce to 0 (UI shows "—" when count=0).
+        const [updatedOption] = await tx
+          .execute(sql`
+            UPDATE options
+            SET rating_count = GREATEST(rating_count - 1, 0),
+                rating_sum = GREATEST(rating_sum - ${oldScore}, 0),
+                avg_rating = COALESCE((rating_sum - ${oldScore})::real / NULLIF(GREATEST(rating_count - 1, 0), 0), 0)
+            WHERE id = ${optionId}
+            RETURNING avg_rating, rating_count
+          `);
+
+        // Inverse atomic O(1) topic counter update — decrement totalRatings, refresh trending
+        await tx
+          .execute(sql`
+            UPDATE topics
+            SET total_ratings = GREATEST(total_ratings - 1, 0),
+                last_activity = NOW(),
+                trending_score = GREATEST(total_ratings - 1, 0)::real / POWER(2, 1.5)
+            WHERE id = ${option.topicId}
+          `);
+
+        // Inverse atomic O(1) user ratingCount update (authenticated only)
+        if (userId) {
+          await tx
+            .execute(sql`
+              UPDATE users
+              SET rating_count = GREATEST(rating_count - 1, 0)
+              WHERE id = ${userId}
+            `);
+        }
+
+        return {
+          optionAvgRating: Number(updatedOption.avg_rating ?? 0),
+          optionRatingCount: Number(updatedOption.rating_count),
         };
       });
 
@@ -227,7 +369,7 @@ export const ratingsRouter = router({
   getForOption: publicProcedure
     .input(z.object({
       optionId: z.string().uuid(),
-      sort: z.enum(['hot', 'newest', 'controversial']).default('newest'),
+      sort: z.enum(["hot", "newest", "controversial"]).default("newest"),
       limit: z.number().int().min(1).max(100).default(20),
       cursor: z.string().optional(),
     }))
@@ -238,12 +380,12 @@ export const ratingsRouter = router({
 
       // Decode cursor for keyset pagination
       if (cursor) {
-        const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
-        if (sort === 'newest') {
+        const decoded = JSON.parse(Buffer.from(cursor, "base64").toString());
+        if (sort === "newest") {
           conditions.push(
             sql`(${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}::timestamptz, ${decoded.id})`
           );
-        } else if (sort === 'hot') {
+        } else if (sort === "hot") {
           // Hot sort uses score DESC then createdAt DESC
           conditions.push(
             sql`(${ratings.score}, ${ratings.createdAt}, ${ratings.id}) < (${decoded.sortValue}, ${decoded.sortValue2}::timestamptz, ${decoded.id})`
@@ -258,9 +400,9 @@ export const ratingsRouter = router({
 
       // Build ORDER BY clause based on sort type
       let orderByClause;
-      if (sort === 'newest') {
+      if (sort === "newest") {
         orderByClause = [desc(ratings.createdAt), desc(ratings.id)];
-      } else if (sort === 'hot') {
+      } else if (sort === "hot") {
         orderByClause = [desc(ratings.score), desc(ratings.createdAt), desc(ratings.id)];
       } else {
         // Controversial: ratings furthest from average score for this option
@@ -295,14 +437,14 @@ export const ratingsRouter = router({
       let nextCursor: string | null = null;
       if (results.length > limit) {
         const lastItem = results[limit - 1];
-        if (sort === 'hot') {
+        if (sort === "hot") {
           nextCursor = Buffer.from(
             JSON.stringify({ id: lastItem.id, sortValue: lastItem.score, sortValue2: lastItem.createdAt })
-          ).toString('base64');
+          ).toString("base64");
         } else {
           nextCursor = Buffer.from(
             JSON.stringify({ id: lastItem.id, sortValue: lastItem.createdAt })
-          ).toString('base64');
+          ).toString("base64");
         }
         results.pop();
       }

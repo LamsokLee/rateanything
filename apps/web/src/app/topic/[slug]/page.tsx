@@ -10,8 +10,7 @@ import { safeAuth } from "@/lib/safe-auth";
 import { getServerCaller } from "@/lib/server-trpc";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { RatingHistoryChart } from "@/components/RatingHistoryChart";
-import { InlineRatingButtons } from "@/components/InlineRatingButtons";
-import { Sparkline } from "@/components/Sparkline";
+import { OptionRow } from "@/components/OptionRow";
 import { CommentSection } from "@/components/CommentSection";
 
 interface TopicPageProps {
@@ -200,73 +199,25 @@ export default async function TopicPage({ params }: TopicPageProps) {
         {/* Mobile: card layout */}
         <div className="md:hidden divide-y divide-border/40">
           {sortedOptions.map((option, index) => {
-            const score = option.avgRating ?? 0;
-            const hasRatings = (option.ratingCount ?? 0) > 0;
             const optColor =
               optionColorMap[option.id] ??
               CHART_COLORS[index % CHART_COLORS.length];
             const rankBadge = getRankBadge(index);
 
             return (
-              <div
+              <OptionRow
                 key={option.id}
-                className="p-4 hover:bg-muted/20 transition-colors duration-100"
-              >
-                {/* Option header: rank + name */}
-                <div className="flex items-center gap-3">
-                  {rankBadge ? (
-                    <span
-                      className="flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold shrink-0"
-                      style={{ backgroundColor: rankBadge.bg, color: rankBadge.text }}
-                    >
-                      {index + 1}
-                    </span>
-                  ) : (
-                    <span className="w-6 h-6 flex items-center justify-center text-xs font-mono text-subtle/70 shrink-0">
-                      {index + 1}
-                    </span>
-                  )}
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: optColor }}
-                  />
-                  <span className="text-sm font-semibold text-foreground truncate">
-                    {option.name}
-                  </span>
-                </div>
-
-                {/* Score + votes + trend row */}
-                <div className="flex items-center justify-between mt-3 pl-9">
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col">
-                      <span className="font-mono text-sm font-bold text-foreground">
-                        {hasRatings ? score.toFixed(1) : "\u2014"}
-                      </span>
-                      <span className="font-mono text-[10px] text-subtle/50">
-                        {option.ratingCount ?? 0} votes
-                      </span>
-                    </div>
-                  </div>
-                  {historyByOption[option.id]?.length >= 2 && (
-                    <Sparkline
-                      data={historyByOption[option.id]}
-                      color={optColor}
-                      width={72}
-                      height={24}
-                      showArea
-                      showTrendIndicator={false}
-                    />
-                  )}
-                </div>
-
-                {/* Vote buttons */}
-                <div className="mt-3 pl-9">
-                  <InlineRatingButtons
-                    optionId={option.id}
-                    currentUserRating={option.userRating}
-                  />
-                </div>
-              </div>
+                optionId={option.id}
+                name={option.name}
+                initialAvgRating={option.avgRating ?? 0}
+                initialRatingCount={option.ratingCount ?? 0}
+                userRating={option.userRating}
+                rank={index + 1}
+                rankBadge={rankBadge}
+                optColor={optColor}
+                history={historyByOption[option.id]}
+                layout="mobile"
+              />
             );
           })}
         </div>
@@ -284,81 +235,25 @@ export default async function TopicPage({ params }: TopicPageProps) {
 
           {/* Table rows */}
           {sortedOptions.map((option, index) => {
-            const score = option.avgRating ?? 0;
-            const hasRatings = (option.ratingCount ?? 0) > 0;
             const optColor =
               optionColorMap[option.id] ??
               CHART_COLORS[index % CHART_COLORS.length];
             const rankBadge = getRankBadge(index);
-            const history = historyByOption[option.id];
 
             return (
-              <div
+              <OptionRow
                 key={option.id}
-                className="grid grid-cols-[2.5rem_1fr_5rem_6rem_19.5rem] gap-3 items-center px-5 py-3.5 border-b border-border/30 last:border-b-0 hover:bg-muted/20 transition-colors duration-100"
-              >
-                {/* Rank */}
-                <div className="flex justify-center">
-                  {rankBadge ? (
-                    <span
-                      className="flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold"
-                      style={{ backgroundColor: rankBadge.bg, color: rankBadge.text }}
-                    >
-                      {index + 1}
-                    </span>
-                  ) : (
-                    <span className="text-xs font-mono text-subtle/70">
-                      {index + 1}
-                    </span>
-                  )}
-                </div>
-
-                {/* Option name with color dot */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: optColor }}
-                  />
-                  <span className="text-sm font-medium text-foreground truncate">
-                    {option.name}
-                  </span>
-                </div>
-
-                {/* Score */}
-                <div className="text-right">
-                  <span className="font-mono text-sm font-bold text-foreground">
-                    {hasRatings ? score.toFixed(1) : "\u2014"}
-                  </span>
-                  <span className="block font-mono text-[10px] text-subtle/60">
-                    {(option.ratingCount ?? 0).toLocaleString()} votes
-                  </span>
-                </div>
-
-                {/* Trend sparkline */}
-                <div className="flex justify-end">
-                  {history && history.length >= 2 ? (
-                    <Sparkline
-                      data={history}
-                      color={optColor}
-                      width={76}
-                      height={22}
-                      showArea
-                      showTrendIndicator={false}
-                    />
-                  ) : (
-                    <span className="text-[10px] text-subtle/50 font-mono">—</span>
-                  )}
-                </div>
-
-
-                {/* Inline vote buttons */}
-                <div className="flex justify-center">
-                  <InlineRatingButtons
-                    optionId={option.id}
-                    currentUserRating={option.userRating}
-                  />
-                </div>
-              </div>
+                optionId={option.id}
+                name={option.name}
+                initialAvgRating={option.avgRating ?? 0}
+                initialRatingCount={option.ratingCount ?? 0}
+                userRating={option.userRating}
+                rank={index + 1}
+                rankBadge={rankBadge}
+                optColor={optColor}
+                history={historyByOption[option.id]}
+                layout="desktop"
+              />
             );
           })}
         </div>

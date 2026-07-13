@@ -45,3 +45,8 @@ npm-debug.log*
 
 # Playwright test output
 test-results/
+
+apps/web/coverage/
+
+# Supabase CLI temp files
+supabase/.temp/

@@ -4,7 +4,7 @@
  * Comments can be attached to a rating OR directly to a topic.
  */
 import {
-  pgTable, uuid, varchar, integer, timestamp, index,
+  pgTable, uuid, varchar, integer, boolean, timestamp, index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { ratings } from './ratings.js';
@@ -21,6 +21,8 @@ export const comments = pgTable('comments', {
   upvotes: integer('upvotes').default(0).notNull(),
   downvotes: integer('downvotes').default(0).notNull(),
   score: integer('score').default(0).notNull(),
+  /** Soft-delete flag for tombstoned comments (Reddit-style: keeps thread structure intact) */
+  isDeleted: boolean('is_deleted').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({

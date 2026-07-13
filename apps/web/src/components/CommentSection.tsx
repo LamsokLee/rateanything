@@ -21,6 +21,10 @@ interface CommentData {
   createdAt: Date | string;
   user: CommentUser | null;
   userVote: "upvote" | "downvote" | null;
+  /** Whether the current logged-in user owns this comment */
+  isOwner: boolean;
+  /** Whether this comment has been soft-deleted (tombstoned) */
+  isDeleted: boolean;
   replies: (Omit<CommentData, "replies">)[];
 }
 
@@ -238,6 +242,32 @@ export function CommentSection({ topicId }: CommentSectionProps) {
     }
   }, [user, sort, fetchComments]);
 
+  /** Delete comment handler — calls comments.remove mutation, then refreshes */
+  const handleDelete = useCallback(async (commentId: string) => {
+    if (!user) return;
+    // Confirm before deleting
+    if (!window.confirm("Delete this comment?")) return;
+
+    try {
+      const res = await fetch("/api/trpc/comments.remove", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ json: { commentId } }),
+      });
+
+      if (res.ok) {
+        // Refresh comments to show tombstone or removal
+        fetchComments(sort);
+      } else {
+        console.error("[CommentSection] Delete failed:", res.status);
+      }
+    } catch (err) {
+      console.error("[CommentSection] Delete error:", err);
+    }
+  }, [user, sort, fetchComments]);
+
   return (
     <section className="border border-border/60 rounded-lg p-5 space-y-4">
       <div className="flex items-center justify-between">
@@ -314,9 +344,10 @@ export function CommentSection({ topicId }: CommentSectionProps) {
                 user={user}
                 onVote={handleVote}
                 onReply={() => setReplyTo(replyTo === comment.id ? null : comment.id)}
+                onDelete={handleDelete}
               />
 
-              {/* Replies */}
+              {/* Replies — always rendered even if parent is deleted (Reddit behavior) */}
               {comment.replies.length > 0 && (
                 <div className="ml-3 sm:ml-6 space-y-2 border-l border-border pl-2 sm:pl-3">
                   {comment.replies.map((reply) => (
@@ -325,6 +356,7 @@ export function CommentSection({ topicId }: CommentSectionProps) {
                       comment={reply}
                       user={user}
                       onVote={handleVote}
+                      onDelete={handleDelete}
                       isReply
                     />
                   ))}
@@ -380,21 +412,55 @@ export function CommentSection({ topicId }: CommentSectionProps) {
   );
 }
 
-/** Individual comment card */
+/** Individual comment card — handles tombstone rendering for deleted comments */
 function CommentCard({
   comment,
   user,
   onVote,
   onReply,
+  onDelete,
   isReply = false,
 }: {
-  comment: { id: string; content: string; upvotes: number; downvotes: number; createdAt: Date | string; user: CommentUser | null; userVote?: "upvote" | "downvote" | null };
+  comment: {
+    id: string;
+    content: string;
+    upvotes: number;
+    downvotes: number;
+    createdAt: Date | string;
+    user: CommentUser | null;
+    userVote?: "upvote" | "downvote" | null;
+    isOwner: boolean;
+    isDeleted: boolean;
+  };
   user: { id: string; username: string | null } | null;
   onVote: (commentId: string, direction: "up" | "down") => void;
   onReply?: () => void;
+  onDelete?: (commentId: string) => void;
   isReply?: boolean;
 }) {
   const netScore = comment.upvotes - comment.downvotes;
+
+  // Tombstone rendering: show muted "[deleted]" content, hide interactive controls
+  if (comment.isDeleted) {
+    return (
+      <div className={`rounded-lg border border-border/40 bg-card/50 p-3 opacity-60 ${isReply ? "text-xs" : "text-sm"}`}>
+        <div className="flex items-center gap-2 mb-1.5">
+          {/* Deleted author placeholder */}
+          <span className={`font-medium text-muted-foreground italic ${isReply ? "text-[11px]" : "text-xs"}`}>
+            [deleted]
+          </span>
+          <span className="text-[10px] text-subtle/70">
+            {formatRelativeTime(comment.createdAt)}
+          </span>
+        </div>
+        {/* Deleted content rendered muted/italic */}
+        <p className={`text-muted-foreground/70 italic leading-relaxed mb-2 ${isReply ? "text-[11px]" : "text-xs"}`}>
+          [deleted]
+        </p>
+        {/* No vote buttons, reply button, or delete button for tombstoned comments */}
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-lg border border-border/40 bg-card/80 p-3 ${isReply ? "text-xs" : "text-sm"}`}>
@@ -445,6 +511,16 @@ function CommentCard({
             className="text-[11px] text-subtle hover:text-foreground/80 transition-colors ml-auto"
           >
             Reply
+          </button>
+        )}
+        {/* Delete button — shown only for comment owner on non-deleted comments */}
+        {comment.isOwner && onDelete && (
+          <button
+            onClick={() => onDelete(comment.id)}
+            className={`text-[11px] text-subtle hover:text-red-400 transition-colors ${!onReply || !user ? "ml-auto" : ""}`}
+            aria-label="Delete comment"
+          >
+            Delete
           </button>
         )}
       </div>

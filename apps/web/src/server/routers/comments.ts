@@ -8,31 +8,9 @@ import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { rateLimit } from "../rate-limit";
 import {
   db, comments, users, ratings, topics, commentVotes,
-  eq, and, sql, desc, asc, count,
+  eq, and, sql, desc, asc,
 } from "@rateanything/db";
 
-
-/** Recompute comment vote counts from the comment_votes source-of-truth table */
-async function recomputeCommentVotes(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], commentId: string) {
-  const [counts] = await tx
-    .select({
-      upvotes: count(sql`CASE WHEN ${commentVotes.vote} = 'upvote' THEN 1 END`),
-      downvotes: count(sql`CASE WHEN ${commentVotes.vote} = 'downvote' THEN 1 END`),
-    })
-    .from(commentVotes)
-    .where(eq(commentVotes.commentId, commentId));
-
-  const up = Number(counts?.upvotes ?? 0);
-  const down = Number(counts?.downvotes ?? 0);
-
-  const [updated] = await tx
-    .update(comments)
-    .set({ upvotes: up, downvotes: down, score: up - down })
-    .where(eq(comments.id, commentId))
-    .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
-
-  return updated;
-}
 
 export const commentsRouter = router({
   /** Get comments for a topic with nested replies (2-level) */
@@ -68,6 +46,8 @@ export const commentsRouter = router({
           upvotes: comments.upvotes,
           downvotes: comments.downvotes,
           createdAt: comments.createdAt,
+          isDeleted: comments.isDeleted,
+          commentUserId: comments.userId,
           userId: users.id,
           username: users.username,
         })
@@ -111,6 +91,8 @@ export const commentsRouter = router({
             upvotes: comments.upvotes,
             downvotes: comments.downvotes,
             createdAt: comments.createdAt,
+            isDeleted: comments.isDeleted,
+            commentUserId: comments.userId,
             userId: users.id,
             username: users.username,
           })
@@ -156,6 +138,8 @@ export const commentsRouter = router({
           upvotes: c.upvotes ?? 0,
           downvotes: c.downvotes ?? 0,
           createdAt: c.createdAt,
+          isDeleted: c.isDeleted,
+          isOwner: currentUserId != null && c.commentUserId === currentUserId,
           user: c.userId ? { id: c.userId, username: c.username } : null,
           userVote: userVotesMap[c.id] ?? null,
           replies: (repliesMap[c.id] ?? []).map((r) => ({
@@ -164,6 +148,8 @@ export const commentsRouter = router({
             upvotes: r.upvotes ?? 0,
             downvotes: r.downvotes ?? 0,
             createdAt: r.createdAt,
+            isDeleted: r.isDeleted,
+            isOwner: currentUserId != null && r.commentUserId === currentUserId,
             user: r.userId ? { id: r.userId, username: r.username } : null,
             userVote: userVotesMap[r.id] ?? null,
           })),
@@ -289,6 +275,144 @@ export const commentsRouter = router({
       return { id: newComment.id, createdAt: newComment.createdAt };
     }),
 
+  /**
+   * Delete (remove) a comment — Reddit-style:
+   * - If the comment HAS replies: tombstone (soft-delete) to preserve thread structure.
+   *   Sets content='[deleted]', is_deleted=true, user_id=NULL.
+   * - If the comment is a LEAF (no replies): hard-delete the row (votes cascade).
+   *   Then check if the parent is an orphaned tombstone and clean it up.
+   *
+   * CASCADE SAFETY: parentId FK has onDelete CASCADE — hard-deleting a parent
+   * would destroy all children. We ONLY hard-delete leaf comments (no children).
+   *
+   * Topic trending score is NOT updated on delete (no comment counter exists,
+   * and recalculating trending on delete would add complexity for minimal benefit).
+   */
+  remove: protectedProcedure
+    .use(rateLimit("comments.remove", 60, 3600))
+    .input(z.object({
+      commentId: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { commentId } = input;
+
+      // Load the comment to verify ownership and current state
+      const [comment] = await db
+        .select({
+          id: comments.id,
+          userId: comments.userId,
+          parentId: comments.parentId,
+          isDeleted: comments.isDeleted,
+          topicId: comments.topicId,
+        })
+        .from(comments)
+        .where(eq(comments.id, commentId))
+        .limit(1);
+
+      if (!comment) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Comment not found" });
+      }
+
+      // Authorization: only the comment author or an admin may delete
+      const isAuthor = comment.userId === ctx.auth.dbUserId;
+      if (!isAuthor) {
+        // Check if the current user is an admin (users.isAdmin exists in schema)
+        const [currentUser] = await db
+          .select({ isAdmin: users.isAdmin })
+          .from(users)
+          .where(eq(users.id, ctx.auth.dbUserId))
+          .limit(1);
+
+        if (!currentUser?.isAdmin) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only the comment author or an admin can delete this comment",
+          });
+        }
+      }
+
+      // Idempotent: if already tombstoned, return early
+      if (comment.isDeleted) {
+        return { success: true as const, mode: "already-deleted" as const };
+      }
+
+      return await db.transaction(async (tx) => {
+        // Check if this comment has any replies (children)
+        const [hasRepliesResult] = await tx
+          .select({ exists: sql<boolean>`EXISTS(SELECT 1 FROM comments WHERE parent_id = ${commentId})` })
+          .from(sql`(SELECT 1) AS _dummy`);
+
+        const hasReplies = hasRepliesResult.exists;
+
+        if (hasReplies) {
+          // TOMBSTONE branch: comment has children — soft-delete to preserve thread.
+          // CASCADE SAFETY: hard-deleting here would destroy all child comments
+          // due to parentId's onDelete CASCADE constraint.
+          await tx
+            .update(comments)
+            .set({
+              content: "[deleted]",
+              isDeleted: true,
+              userId: null,
+              updatedAt: sql`NOW()`,
+            })
+            .where(eq(comments.id, commentId));
+
+          return { success: true as const, mode: "tombstoned" as const };
+        } else {
+          // LEAF branch: no children — safe to hard-delete (comment_votes cascade automatically)
+          await tx
+            .delete(comments)
+            .where(eq(comments.id, commentId));
+
+          // Reddit-style parent cleanup: if the deleted leaf had a parent that is
+          // itself tombstoned and now has zero remaining children, remove the parent too.
+          // Nesting is capped at 2 levels, so this climbs at most one step, but we
+          // use a loop for safety in case of future nesting depth changes.
+          let parentIdToCheck = comment.parentId;
+          let parentCleaned = false;
+
+          while (parentIdToCheck) {
+            const [parentComment] = await tx
+              .select({
+                id: comments.id,
+                isDeleted: comments.isDeleted,
+                parentId: comments.parentId,
+              })
+              .from(comments)
+              .where(eq(comments.id, parentIdToCheck))
+              .limit(1);
+
+            // Parent doesn't exist or isn't tombstoned — stop
+            if (!parentComment || !parentComment.isDeleted) {
+              break;
+            }
+
+            // Check if the tombstoned parent still has remaining children
+            const [parentHasChildren] = await tx
+              .select({ exists: sql<boolean>`EXISTS(SELECT 1 FROM comments WHERE parent_id = ${parentIdToCheck})` })
+              .from(sql`(SELECT 1) AS _dummy`);
+
+            if (parentHasChildren.exists) {
+              // Parent still has other children — stop cleanup
+              break;
+            }
+
+            // Parent is tombstoned with zero children — safe to hard-delete
+            await tx
+              .delete(comments)
+              .where(eq(comments.id, parentIdToCheck));
+
+            parentCleaned = true;
+            // Move up the chain (at most one more level due to 2-level cap)
+            parentIdToCheck = parentComment.parentId;
+          }
+
+          return { success: true as const, mode: parentCleaned ? "deleted+parent" as const : "deleted" as const };
+        }
+      });
+    }),
+
   /** Upvote a comment — prevents duplicate votes, allows toggle */
   upvote: protectedProcedure
     .use(rateLimit("comments.upvote", 120, 3600))
@@ -346,8 +470,31 @@ export const commentsRouter = router({
             .values({ userId, commentId: input.commentId, vote: 'upvote' });
         }
 
-        // Recompute from source of truth
-        const updated = await recomputeCommentVotes(tx, input.commentId);
+        // Atomic O(1) counter update — delta logic based on vote transition:
+        // - no existing vote -> new upvote: dUp=+1, dDown=0, dScore=+1
+        // - existing upvote -> toggle off (DELETE): dUp=-1, dDown=0, dScore=-1
+        // - existing downvote -> switch to upvote (UPDATE): dUp=+1, dDown=-1, dScore=+2
+        let dUp = 1;
+        let dDown = 0;
+        let dScore = 1;
+        if (existing?.vote === 'upvote') {
+          // Was toggled off above
+          dUp = -1; dDown = 0; dScore = -1;
+        } else if (existing?.vote === 'downvote') {
+          // Switched from downvote to upvote above
+          dUp = 1; dDown = -1; dScore = 2;
+        }
+
+        const [updated] = await tx
+          .update(comments)
+          .set({
+            upvotes: sql`${comments.upvotes} + ${dUp}`,
+            downvotes: sql`${comments.downvotes} + ${dDown}`,
+            score: sql`${comments.score} + ${dScore}`,
+          })
+          .where(eq(comments.id, input.commentId))
+          .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
+
         return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote };
       });
     }),
@@ -409,8 +556,31 @@ export const commentsRouter = router({
             .values({ userId, commentId: input.commentId, vote: 'downvote' });
         }
 
-        // Recompute from source of truth
-        const updated = await recomputeCommentVotes(tx, input.commentId);
+        // Atomic O(1) counter update — delta logic based on vote transition:
+        // - no existing vote -> new downvote: dUp=0, dDown=+1, dScore=-1
+        // - existing downvote -> toggle off (DELETE): dUp=0, dDown=-1, dScore=+1
+        // - existing upvote -> switch to downvote (UPDATE): dUp=-1, dDown=+1, dScore=-2
+        let dUp = 0;
+        let dDown = 1;
+        let dScore = -1;
+        if (existing?.vote === 'downvote') {
+          // Was toggled off above
+          dUp = 0; dDown = -1; dScore = 1;
+        } else if (existing?.vote === 'upvote') {
+          // Switched from upvote to downvote above
+          dUp = -1; dDown = 1; dScore = -2;
+        }
+
+        const [updated] = await tx
+          .update(comments)
+          .set({
+            upvotes: sql`${comments.upvotes} + ${dUp}`,
+            downvotes: sql`${comments.downvotes} + ${dDown}`,
+            score: sql`${comments.score} + ${dScore}`,
+          })
+          .where(eq(comments.id, input.commentId))
+          .returning({ upvotes: comments.upvotes, downvotes: comments.downvotes, score: comments.score });
+
         return { success: true, upvotes: updated.upvotes, downvotes: updated.downvotes, score: updated.score, userVote };
       });
     }),

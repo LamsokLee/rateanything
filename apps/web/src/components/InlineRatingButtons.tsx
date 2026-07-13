@@ -15,12 +15,14 @@ interface InlineRatingButtonsProps {
   optionId: string;
   currentUserRating: number | null;
   onVoteSuccess?: () => void;
+  onScoreUpdate?: (avgRating: number, ratingCount: number) => void;
 }
 
 export function InlineRatingButtons({
   optionId,
   currentUserRating,
   onVoteSuccess,
+  onScoreUpdate,
 }: InlineRatingButtonsProps) {
   const { user, isLoading: authLoading } = useAuth();
   const [userRating, setUserRating] = useState<number | null>(currentUserRating);
@@ -66,7 +68,47 @@ export function InlineRatingButtons({
   const handleRate = useCallback(
     async (score: number) => {
       if (isSubmitting) return;
-      if (score === userRating) return;
+
+      // --- Toggle-off: clicking the currently-selected score cancels the rating ---
+      if (score === userRating) {
+        const prevRating = userRating;
+        setUserRating(null);
+        setIsSubmitting(true);
+
+        try {
+          const payload: { optionId: string; guestFingerprint?: string } = { optionId };
+          if (!user) {
+            payload.guestFingerprint = getFingerprint();
+          }
+
+          const res = await fetch("/api/trpc/ratings.remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ json: payload }),
+          });
+
+          if (!res.ok) {
+            // Rollback on failure
+            setUserRating(prevRating);
+          } else {
+            // Parse response to get updated avg/count
+            const resBody = await res.json().catch(() => null);
+            const data = resBody?.result?.data?.json;
+            if (data && typeof data.optionAvgRating === "number" && typeof data.optionRatingCount === "number") {
+              onScoreUpdate?.(data.optionAvgRating, data.optionRatingCount);
+            }
+            setJustVoted(false);
+            onVoteSuccess?.();
+          }
+        } catch {
+          // Rollback on network error
+          setUserRating(prevRating);
+        } finally {
+          setIsSubmitting(false);
+        }
+        return;
+      }
+      // --- End toggle-off branch ---
 
       const prevRating = userRating;
       setUserRating(score);
@@ -100,6 +142,12 @@ export function InlineRatingButtons({
           }
           setUserRating(prevRating);
         } else {
+          // Parse response to get updated avg/count from mutation result
+          const resBody = await res.json().catch(() => null);
+          const data = resBody?.result?.data?.json;
+          if (data && typeof data.optionAvgRating === "number" && typeof data.optionRatingCount === "number") {
+            onScoreUpdate?.(data.optionAvgRating, data.optionRatingCount);
+          }
           setJustVoted(true);
           setTimeout(() => setJustVoted(false), 800);
           onVoteSuccess?.();
@@ -110,7 +158,7 @@ export function InlineRatingButtons({
         setIsSubmitting(false);
       }
     },
-    [optionId, userRating, isSubmitting, onVoteSuccess, user]
+    [optionId, userRating, isSubmitting, onVoteSuccess, onScoreUpdate, user]
   );
 
   return (
