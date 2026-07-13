@@ -20,11 +20,15 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@latest
+      - name: Install dependencies
+        run: npm install
 
       - name: Check secrets exist
         run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Error: DATABASE_URL secret not set"
+            exit 1
+          fi
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "Error: VERCEL_TOKEN secret not set"
             exit 1
@@ -38,22 +42,31 @@ jobs:
             exit 1
           fi
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DATABASE_URL: *** secrets.DATABASE_URL }}
+          VERCEL_TOKEN: *** secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+      - name: Run DB migrations
+        run: cd packages/db && npx drizzle-kit push --force
+        env:
+          DATABASE_URL: *** secrets.DATABASE_URL }}
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
       - name: Deploy to Vercel (Production)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+        run: vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}"
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TOKEN: *** secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Deploy to Vercel (Preview)
         if: github.event_name == 'pull_request'
-        run: vercel deploy --yes --token "$VERCEL_TOKEN"
+        run: vercel deploy --yes --token "${{ secrets.VERCEL_TOKEN }}"
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TOKEN: *** secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
