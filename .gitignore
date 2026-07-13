@@ -50,3 +50,4 @@ apps/web/coverage/
 
 # Supabase CLI temp files
 supabase/.temp/
+.env*

@@ -156,26 +156,37 @@ export const topicsRouter = router({
       // Fetch top comment per option (most recent rating with a comment)
       const topComments: Record<string, { comment: string; username: string; score: number; upvotes: number }> = {};
       if (optionIds.length > 0) {
-        // Safe: uses parameterized sql placeholders via Drizzle (no sql.raw interpolation)
-        const commentRows = await db.execute<{
-          option_id: string;
-          comment: string;
-          username: string;
-          score: number;
-        }>(
-          sql`SELECT DISTINCT ON (r.option_id) r.option_id, r.comment, COALESCE(u.username, 'Anonymous') as username, r.score
-          FROM ratings r
-          LEFT JOIN users u ON r.user_id = u.id
-          WHERE r.option_id IN (${sql.join(optionIds.map(id => sql`${id}`), sql`,`)}) AND r.comment IS NOT NULL AND r.comment != ''
-          ORDER BY r.option_id, r.created_at DESC`
-        );
+        const commentRows = await db
+          .select({
+            optionId: ratings.optionId,
+            comment: ratings.comment,
+            score: ratings.score,
+            createdAt: ratings.createdAt,
+            username: users.username,
+          })
+          .from(ratings)
+          .leftJoin(users, eq(ratings.userId, users.id))
+          .where(
+            and(
+              inArray(ratings.optionId, optionIds),
+              sql`${ratings.comment} IS NOT NULL`,
+              sql`${ratings.comment} != ''`
+            )
+          )
+          .orderBy(desc(ratings.optionId), desc(ratings.createdAt));
+
+        // Deduplicate to get the most recent comment per option
+        const seen = new Set<string>();
         for (const row of commentRows) {
-          topComments[row.option_id] = {
-            comment: row.comment,
-            username: row.username,
-            score: Number(row.score),
-            upvotes: 0,
-          };
+          if (!seen.has(row.optionId)) {
+            seen.add(row.optionId);
+            topComments[row.optionId] = {
+              comment: row.comment!,
+              username: row.username ?? "Anonymous",
+              score: row.score,
+              upvotes: 0,
+            };
+          }
         }
       }
 
@@ -527,6 +538,7 @@ export const topicsRouter = router({
       const optionIds = topicOptions.map((o) => o.id);
 
       // Safe: uses parameterized sql placeholders via Drizzle (no sql.raw interpolation)
+      const bucketSizeLiteral = bucketSize === "hour" ? sql.raw("'hour'") : sql.raw("'day'");
       const historyRows = await db.execute<{
         option_id: string;
         bucket: string;
@@ -539,10 +551,10 @@ export const topicsRouter = router({
           AVG(daily_avg) OVER (PARTITION BY option_id ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::float as running_avg,
           SUM(cnt) OVER (PARTITION BY option_id ORDER BY bucket)::int as cumulative_count
         FROM (
-          SELECT option_id, date_trunc(${sql.raw("'" + bucketSize + "'")}, created_at)::text as bucket, AVG(score) as daily_avg, COUNT(*) as cnt
+          SELECT option_id, date_trunc(${bucketSizeLiteral}, created_at)::text as bucket, AVG(score) as daily_avg, COUNT(*) as cnt
           FROM ratings
-          WHERE option_id IN (${sql.join(optionIds.map(id => sql`${id}`), sql`,`)})
-          GROUP BY option_id, date_trunc(${sql.raw("'" + bucketSize + "'")}, created_at)
+          WHERE option_id IN (${sql.join(optionIds.map(id => sql`${id}`), sql`,`)})  
+          GROUP BY option_id, date_trunc(${bucketSizeLiteral}, created_at)
         ) sub
         ORDER BY option_id, bucket ASC`
       );
