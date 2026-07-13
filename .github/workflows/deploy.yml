@@ -48,7 +48,7 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Run DB migrations
-        run: cd packages/db && npx drizzle-kit push --force
+        run: node scripts/migrate.js
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
