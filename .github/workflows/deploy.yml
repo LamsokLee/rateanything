@@ -42,15 +42,15 @@ jobs:
             exit 1
           fi
         env:
-          DATABASE_URL: *** secrets.DATABASE_URL }}
-          VERCEL_TOKEN: *** secrets.VERCEL_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Run DB migrations
         run: cd packages/db && npx drizzle-kit push --force
         env:
-          DATABASE_URL: *** secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
@@ -59,7 +59,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}"
         env:
-          VERCEL_TOKEN: *** secrets.VERCEL_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
@@ -67,6 +67,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: vercel deploy --yes --token "${{ secrets.VERCEL_TOKEN }}"
         env:
-          VERCEL_TOKEN: *** secrets.VERCEL_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
