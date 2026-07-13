@@ -29,6 +29,9 @@ export function Sparkline({
   showArea = true,
   showTrendIndicator = true,
 }: SparklineProps) {
+  const reactId = useId();
+  const gradientId = `sparkline-gradient${reactId}`;
+
   if (data.length < 2) {
     return (
       <span
@@ -62,7 +65,6 @@ export function Sparkline({
   const firstScore = data[0].avgScore;
   const lastScore = data[data.length - 1].avgScore;
   const trend = lastScore - firstScore;
-  const reactId = useId(); const gradientId = `sparkline-gradient${reactId}`;
   return (
     <div className={`inline-flex items-center gap-1.5 ${className}`}>
       <svg

@@ -11,6 +11,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: "postgres://rateanything:rateanything@localhost:5433/rateanything_test",
       NODE_ENV: "test",
+      REDIS_URL: "",
     },
     coverage: {
       provider: "v8",

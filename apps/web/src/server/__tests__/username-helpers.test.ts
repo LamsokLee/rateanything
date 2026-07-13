@@ -22,7 +22,7 @@ const mockGetUser = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: vi.fn().mockResolvedValue({
     users: {
-      getUser: (...args: any[]) => mockGetUser(...args),
+      getUser: (...args: unknown[]) => mockGetUser(...args),
     },
   }),
 }));

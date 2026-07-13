@@ -129,7 +129,7 @@ export default function SearchPageContent() {
         results.length === 0 ? (
           <div className="border border-border rounded-lg bg-card p-8 text-center">
             <p className="text-sm text-subtle">
-              No topics found for <span className="font-mono text-muted-foreground">"{query}"</span>
+              No topics found for <span className="font-mono text-muted-foreground">&quot;{query}&quot;</span>
             </p>
           </div>
         ) : (

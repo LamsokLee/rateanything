@@ -30,7 +30,7 @@ export const usersRouter = router({
   /** Get a user's public profile by username with badge list */
   getProfile: publicProcedure
     .input(z.object({ username: z.string() }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx: _ctx, input }) => {
       const [user] = await db
         .select({
           id: users.id,

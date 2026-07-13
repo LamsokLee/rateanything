@@ -137,7 +137,7 @@ describe("moderation.report", () => {
       caller.moderation.report({
         targetType: "topic",
         targetId: crypto.randomUUID(),
-        reason: "invalid_reason" as any,
+        reason: "invalid_reason" as never,
       }),
     ).rejects.toThrow();
   });
@@ -146,7 +146,7 @@ describe("moderation.report", () => {
     const caller = await createTestCaller(TEST_USERS.regular.clerkId);
     await expect(
       caller.moderation.report({
-        targetType: "invalid_target" as any,
+        targetType: "invalid_target" as never,
         targetId: crypto.randomUUID(),
         reason: "spam",
       }),

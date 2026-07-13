@@ -229,7 +229,7 @@ export const topicsRouter = router({
       limit: z.number().int().min(1).max(50).default(20),
       cursor: z.string().optional(),
     }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx: _ctx, input }) => {
       const { limit, cursor, categoryId } = input;
 
       const conditions = [eq(topics.status, "active")];
@@ -325,7 +325,7 @@ export const topicsRouter = router({
       limit: z.number().int().min(1).max(50).default(20),
       cursor: z.string().optional(),
     }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx: _ctx, input }) => {
       const { query, limit, cursor } = input;
 
       const searchPattern = `%${query}%`;
@@ -379,7 +379,7 @@ export const topicsRouter = router({
       limit: z.number().int().min(1).max(50).default(20),
       cursor: z.string().optional(),
     }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx: _ctx, input }) => {
       const { slug, limit, cursor } = input;
 
       const [category] = await db
@@ -479,7 +479,7 @@ export const topicsRouter = router({
       description: z.string().max(1000).optional(),
       imageUrl: z.string().url().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx: _ctx, input }) => {
       const [topic] = await db
         .select({ id: topics.id, allowNewOptions: topics.allowNewOptions })
         .from(topics)

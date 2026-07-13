@@ -6,7 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { rateLimit } from "../rate-limit";
 import {
-  db, ratings, options, topics, users, guests,
+  db, ratings, options, users, guests,
   eq, and, sql, desc,
 } from "@rateanything/db";
 
@@ -373,7 +373,7 @@ export const ratingsRouter = router({
       limit: z.number().int().min(1).max(100).default(20),
       cursor: z.string().optional(),
     }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx: _ctx, input }) => {
       const { optionId, sort, limit, cursor } = input;
 
       const conditions = [eq(ratings.optionId, optionId)];

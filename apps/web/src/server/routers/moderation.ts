@@ -81,7 +81,7 @@ export const moderationRouter = router({
       limit: z.number().int().min(1).max(50).default(20),
       cursor: z.string().optional(),
     }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ ctx: _ctx, input }) => {
       const { status, limit, cursor } = input;
 
       const conditions = [eq(reports.status, status)];
@@ -148,7 +148,7 @@ export const moderationRouter = router({
       action: z.enum(['dismiss', 'warn', 'remove', 'ban']),
       note: z.string().max(500).optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx: _ctx, input }) => {
       const { reportId, action } = input;
 
       // Fetch the report to get target info

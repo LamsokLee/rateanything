@@ -11,11 +11,11 @@ const isDevMode =
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.includes("placeholder") ??
   false;
 
-function devMiddleware(req: NextRequest) {
+function devMiddleware(_req: NextRequest) {
   return NextResponse.next();
 }
 
-const prodMiddleware = clerkMiddleware(async (auth, req) => {
+const prodMiddleware = clerkMiddleware(async (_auth, _req) => {
   // Optional: protect specific routes here if needed
   // For now, just let all requests through and handle auth in tRPC
   return NextResponse.next();
