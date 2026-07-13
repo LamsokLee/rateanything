@@ -1,6 +1,8 @@
-// Supabase Edge Function — triggers DB migration via stored procedure
-// Call from GitHub Actions: POST https://<project>.supabase.co/functions/v1/migrate
-// No auth required (publicly accessible but harmless)
+/**
+ * Supabase Edge Function — triggers DB migration via stored procedure.
+ * Call from GitHub Actions: POST https://<project>.supabase.co/functions/v1/migrate
+ * No auth required (publicly accessible but harmless).
+ */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
