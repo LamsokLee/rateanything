@@ -2,9 +2,10 @@
 
 /**
  * UserActivityTabs — Accessible tabs wrapper for user profile activity sections.
- * Renders Votes and Comments tabs with proper ARIA attributes and keyboard navigation.
+ * Renders Votes, Comments, and Topics tabs with proper ARIA attributes and keyboard navigation.
  */
 import { useState, useCallback, type KeyboardEvent } from "react";
+import Link from "next/link";
 import { UserRatingHistory } from "./UserRatingHistory";
 import { UserCommentHistory } from "./UserCommentHistory";
 
@@ -25,17 +26,29 @@ interface CommentHistoryItem {
   createdAt: Date | string;
 }
 
+interface CreatedTopicItem {
+  id: string;
+  title: string;
+  slug: string;
+  totalRatings: number;
+  createdAt: Date | string;
+  categoryName: string | null;
+  categorySlug: string | null;
+}
+
 interface UserActivityTabsProps {
   username: string;
   initialRatingItems: RatingHistoryItem[];
   initialRatingCursor: string | null;
   initialCommentItems: CommentHistoryItem[];
   initialCommentCursor: string | null;
+  initialCreatedTopics: CreatedTopicItem[];
 }
 
 const TABS = [
   { id: "votes", label: "Votes" },
   { id: "comments", label: "Comments" },
+  { id: "topics", label: "Topics" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -46,6 +59,7 @@ export function UserActivityTabs({
   initialRatingCursor,
   initialCommentItems,
   initialCommentCursor,
+  initialCreatedTopics,
 }: UserActivityTabsProps) {
   const [activeTab, setActiveTab] = useState<TabId>("votes");
 
@@ -139,6 +153,44 @@ export function UserActivityTabs({
             initialCursor={initialCommentCursor}
             username={username}
           />
+        )}
+      </div>
+
+      <div
+        id="tabpanel-topics"
+        role="tabpanel"
+        aria-labelledby="tab-topics"
+        hidden={activeTab !== "topics"}
+      >
+        {activeTab === "topics" && (
+          initialCreatedTopics.length > 0 ? (
+            <ul className="space-y-3">
+              {initialCreatedTopics.map((topic) => (
+                <li key={topic.id}>
+                  <Link
+                    href={`/topic/${topic.slug}`}
+                    className="block border border-border rounded-lg p-3 hover:border-subtle transition-colors bg-card"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      {topic.categoryName && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                          {topic.categoryName}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-subtle font-mono">
+                        {topic.totalRatings} votes
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-foreground line-clamp-1">
+                      {topic.title}
+                    </h3>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-subtle">No topics created yet.</p>
+          )
         )}
       </div>
     </div>

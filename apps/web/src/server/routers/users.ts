@@ -5,7 +5,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
 import {
-  db, users, follows, badges, userBadges, ratings, comments, options, topics,
+  db, users, follows, badges, userBadges, ratings, comments, options, topics, categories,
   eq, and, sql, desc,
 } from "@rateanything/db";
 
@@ -230,6 +230,45 @@ export const usersRouter = router({
         })),
         nextCursor,
       };
+    }),
+
+
+  /** Get topics created by a user */
+  getCreatedTopics: publicProcedure
+    .input(z.object({
+      username: z.string(),
+      limit: z.number().int().min(1).max(50).default(20),
+    }))
+    .query(async ({ input }) => {
+      const { username, limit } = input;
+
+      const [user] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+
+      const results = await db
+        .select({
+          id: topics.id,
+          title: topics.title,
+          slug: topics.slug,
+          totalRatings: topics.totalRatings,
+          createdAt: topics.createdAt,
+          categoryName: categories.name,
+          categorySlug: categories.slug,
+        })
+        .from(topics)
+        .leftJoin(categories, eq(topics.categoryId, categories.id))
+        .where(eq(topics.creatorId, user.id))
+        .orderBy(desc(topics.createdAt))
+        .limit(limit);
+
+      return { items: results };
     }),
 
   /** Follow another user */

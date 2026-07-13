@@ -5,20 +5,11 @@
 import { notFound } from "next/navigation";
 import { getServerCaller } from "@/lib/server-trpc";
 import { UserActivityTabs } from "@/components/UserActivityTabs";
+import { formatDate } from "@/lib/format-date";
 
 interface UserPageProps {
   params: { username: string };
 }
-
-function formatDate(dateInput: Date | string): string {
-  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export default async function UserPage({ params }: UserPageProps) {
   const { username } = params;
 
@@ -31,12 +22,16 @@ export default async function UserPage({ params }: UserPageProps) {
   let commentResult: Awaited<
     ReturnType<Awaited<ReturnType<typeof getServerCaller>>["users"]["getCommentHistory"]>
   > | null = null;
+  let createdTopicsResult: Awaited<
+    ReturnType<Awaited<ReturnType<typeof getServerCaller>>["users"]["getCreatedTopics"]>
+  > | null = null;
 
   try {
     const caller = await getServerCaller();
     profile = await caller.users.getProfile({ username });
     historyResult = await caller.users.getRatingHistory({ username, limit: 20 });
     commentResult = await caller.users.getCommentHistory({ username, limit: 20 });
+    createdTopicsResult = await caller.users.getCreatedTopics({ username, limit: 20 });
   } catch {
     notFound();
   }
@@ -75,7 +70,7 @@ export default async function UserPage({ params }: UserPageProps) {
         </div>
       </header>
 
-      {/* ─── ACTIVITY TABS (Votes | Comments) ─── */}
+      {/* ─── ACTIVITY TABS (Votes | Comments | Topics) ─── */}
       <section>
         <UserActivityTabs
           username={username}
@@ -83,6 +78,7 @@ export default async function UserPage({ params }: UserPageProps) {
           initialRatingCursor={historyResult?.nextCursor ?? null}
           initialCommentItems={commentResult?.items ?? []}
           initialCommentCursor={commentResult?.nextCursor ?? null}
+          initialCreatedTopics={createdTopicsResult?.items ?? []}
         />
       </section>
     </div>

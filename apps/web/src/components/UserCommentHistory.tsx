@@ -6,6 +6,7 @@
  */
 import { useState, useCallback } from "react";
 import Link from "next/link";
+import { formatDate } from "@/lib/format-date";
 
 interface CommentHistoryItem {
   id: string;
@@ -21,16 +22,6 @@ interface UserCommentHistoryProps {
   initialCursor: string | null;
   username: string;
 }
-
-function formatDate(dateInput: Date | string): string {
-  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function truncateContent(content: string, maxLength = 120): string {
   if (content.length <= maxLength) return content;
   return content.slice(0, maxLength).trimEnd() + "…";
