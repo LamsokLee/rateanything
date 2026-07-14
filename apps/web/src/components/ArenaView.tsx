@@ -10,13 +10,16 @@
  *   - Mobile swipe: left picks option A, right picks option B
  *
  * State flow:
- *   idle → picking (user taps) → revealing (show result) → idle (next pair)
+ *   idle → picking (user taps) → submitting (winner shown optimistically)
+ *        → revealing (vote confirmed) → idle (next pair)
  *
  * Non-obvious logic:
  *   - Swipe detection uses pointer events (no gesture library needed).
  *     A horizontal swipe > 50px with velocity > 0.3px/ms triggers pick.
- *   - Results are concealed until a pick is made, then briefly revealed
- *     with the winner badge before loading the next pair.
+ *   - The winner badge is shown immediately on tap, before the server responds,
+ *     so the UI feels instant. The vote is submitted in the background.
+ *   - The next pair is fetched in parallel with the reveal timer so new cards
+ *     appear as soon as the animation ends.
  */
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "./AuthProvider";
@@ -27,7 +30,7 @@ const SWIPE_THRESHOLD = 50;
 /** Minimum velocity (px/ms) for swipe */
 const SWIPE_VELOCITY = 0.3;
 /** Time to show result before loading next pair (ms) */
-const REVEAL_DURATION = 1500;
+const REVEAL_DURATION = 600;
 
 interface ArenaOption {
   id: string;
@@ -44,6 +47,12 @@ type ArenaState = "loading" | "idle" | "submitting" | "revealing" | "error" | "i
 
 interface VoteResult {
   winnerId: string;
+}
+
+interface PairResponse {
+  insufficientOptions?: boolean;
+  optionA: ArenaOption | null;
+  optionB: ArenaOption | null;
 }
 
 /** Simple browser fingerprint for guest arena votes */
@@ -79,36 +88,36 @@ export function ArenaView({ topicId }: ArenaViewProps) {
   const pointerStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  /** Fetch a new pair from the arena.getPair endpoint */
+  /** Fetches pair data without side effects. Returns the raw JSON result. */
+  const fetchPairData = useCallback(async () => {
+    const res = await fetch(
+      `/api/trpc/arena.getPair?input=${encodeURIComponent(JSON.stringify({ json: { topicId } }))}`
+    );
+    if (!res.ok) {
+      throw new Error("Failed to fetch pair");
+    }
+    const data = await res.json();
+    const result = data?.result?.data?.json;
+    if (!result) {
+      throw new Error("Unexpected response from server");
+    }
+    return result as PairResponse;
+  }, [topicId]);
+
+  /** Fetch a new pair and update UI state */
   const fetchPair = useCallback(async () => {
     setState("loading");
     setVoteResult(null);
     try {
-      const res = await fetch(
-        `/api/trpc/arena.getPair?input=${encodeURIComponent(JSON.stringify({ json: { topicId } }))}`
-      );
-      if (!res.ok) {
-        throw new Error("Failed to fetch pair");
-      }
-      const data = await res.json();
-      const result = data?.result?.data?.json;
-
-      if (!result) {
-        setState("error");
-        setErrorMessage("Unexpected response from server");
-        return;
-      }
-
+      const result = await fetchPairData();
       if (result.insufficientOptions) {
         setState("insufficient");
         return;
       }
-
       if (!result.optionA || !result.optionB) {
         setState("empty");
         return;
       }
-
       setOptionA(result.optionA);
       setOptionB(result.optionB);
       setState("idle");
@@ -116,12 +125,14 @@ export function ArenaView({ topicId }: ArenaViewProps) {
       setState("error");
       setErrorMessage(err instanceof Error ? err.message : "Network error");
     }
-  }, [topicId]);
+  }, [fetchPairData]);
 
   /** Submit a vote for the given winner */
   const submitVote = useCallback(
     async (winnerOptionId: string) => {
       if (!optionA || !optionB || state !== "idle") return;
+      // Optimistically show the winner immediately while the vote is submitted.
+      setVoteResult({ winnerId: winnerOptionId });
       setState("submitting");
 
       try {
@@ -156,20 +167,41 @@ export function ArenaView({ topicId }: ArenaViewProps) {
 
         await res.json();
 
-        setVoteResult({ winnerId: winnerOptionId });
+        // Vote confirmed — advance to reveal and fetch next pair.
         setMatchCount((c) => c + 1);
         setState("revealing");
 
-        // After reveal duration, fetch next pair
-        setTimeout(() => {
-          fetchPair();
-        }, REVEAL_DURATION);
+        // Fetch next pair in parallel with the reveal timer so the new cards
+        // are ready as soon as the animation ends.
+        const nextPairPromise = fetchPairData();
+        const timerPromise = new Promise<void>((resolve) =>
+          setTimeout(resolve, REVEAL_DURATION)
+        );
+
+        try {
+          const [result] = await Promise.all([nextPairPromise, timerPromise]);
+          if (result.insufficientOptions) {
+            setState("insufficient");
+            return;
+          }
+          if (!result.optionA || !result.optionB) {
+            setState("empty");
+            return;
+          }
+          setOptionA(result.optionA);
+          setOptionB(result.optionB);
+          setVoteResult(null);
+          setState("idle");
+        } catch (err) {
+          setState("error");
+          setErrorMessage(err instanceof Error ? err.message : "Network error");
+        }
       } catch (err) {
         setState("error");
         setErrorMessage(err instanceof Error ? err.message : "Vote failed");
       }
     },
-    [optionA, optionB, state, topicId, user, fetchPair]
+    [optionA, optionB, state, topicId, user, fetchPairData]
   );
 
   /** Submit a skip */
@@ -313,6 +345,7 @@ export function ArenaView({ topicId }: ArenaViewProps) {
   const isRevealing = state === "revealing";
   const isSubmitting = state === "submitting";
   const isDisabled = isRevealing || isSubmitting;
+  const hasVoteResult = voteResult !== null;
 
   return (
     <div className="space-y-4">
@@ -348,8 +381,8 @@ export function ArenaView({ topicId }: ArenaViewProps) {
             keyHint="1"
             onPick={() => submitVote(optionA.id)}
             disabled={isDisabled}
-            isWinner={isRevealing && voteResult?.winnerId === optionA.id}
-            isLoser={isRevealing && voteResult?.winnerId !== optionA.id}
+            isWinner={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionA.id}
+            isLoser={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionA.id}
           />
         )}
 
@@ -369,8 +402,8 @@ export function ArenaView({ topicId }: ArenaViewProps) {
             keyHint="2"
             onPick={() => submitVote(optionB.id)}
             disabled={isDisabled}
-            isWinner={isRevealing && voteResult?.winnerId === optionB.id}
-            isLoser={isRevealing && voteResult?.winnerId !== optionB.id}
+            isWinner={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionB.id}
+            isLoser={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionB.id}
           />
         )}
       </div>
