@@ -3,35 +3,21 @@
 /**
  * ArenaView — Pairwise comparison UI for Arena mode.
  *
- * Renders two option cards side-by-side on all screen sizes.
- * Users pick a winner via:
- *   - Tap/click on a card (primary interaction)
- *   - Swipe left/right on the arena surface (Tinder-style drag with fly-off)
- *   - Keyboard: 1/2 keys or ArrowLeft/ArrowRight
+ * Mobile-first design: options are presented as a single card split down the
+ * middle by a vertical divider. Left half = option A, right half = option B.
+ * Users tap either half to vote. Desktop also uses the split-card layout for
+ * consistency, with slightly more generous padding.
  *
  * State flow:
- *   idle → picking (user taps/swipes) → submitting (winner shown optimistically)
+ *   idle → picking (user taps a half) → submitting (winner shown optimistically)
  *        → revealing (vote confirmed) → idle (next pair)
- *
- * Non-obvious logic:
- *   - Swipe detection uses pointer events on the container. Cards translate and
- *     rotate with the finger, giving tactile feedback. Release past threshold
- *     triggers a fly-off animation + vote.
- *   - Winner badge is shown immediately on tap, before the server responds.
- *   - Next pair is fetched in parallel with the reveal timer.
  */
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "./AuthProvider";
 import { Skeleton } from "./Skeleton";
 
-/** Minimum horizontal distance (px) to trigger a vote on swipe release */
-const SWIPE_THRESHOLD = 80;
-/** Maximum rotation (degrees) at full swipe */
-const MAX_ROTATION = 12;
 /** Time to show result before loading next pair (ms) */
 const REVEAL_DURATION = 600;
-/** Fly-off animation duration (ms) */
-const FLY_OFF_DURATION = 300;
 
 interface ArenaOption {
   id: string;
@@ -45,8 +31,6 @@ interface ArenaViewProps {
 }
 
 type ArenaState = "loading" | "idle" | "submitting" | "revealing" | "error" | "insufficient" | "empty";
-
-type FlyOffDir = "left" | "right" | null;
 
 interface VoteResult {
   winnerId: string;
@@ -87,16 +71,6 @@ export function ArenaView({ topicId }: ArenaViewProps) {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [matchCount, setMatchCount] = useState(0);
 
-  // Swipe / drag state
-  const [dragX, setDragX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const [flyOffDir, setFlyOffDir] = useState<FlyOffDir>(null);
-
-  const pointerStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dragXRef = useRef(0);
-  const isDraggingRef = useRef(false);
-
   /** Fetches pair data without side effects. */
   const fetchPairData = useCallback(async () => {
     const res = await fetch(
@@ -117,8 +91,6 @@ export function ArenaView({ topicId }: ArenaViewProps) {
   const fetchPair = useCallback(async () => {
     setState("loading");
     setVoteResult(null);
-    setDragX(0);
-    setFlyOffDir(null);
     try {
       const result = await fetchPairData();
       if (result.insufficientOptions) {
@@ -249,7 +221,7 @@ export function ArenaView({ topicId }: ArenaViewProps) {
     fetchPair();
   }, [fetchPair]);
 
-  /** Keyboard handler */
+  /** Keyboard handler: 1/ArrowLeft = A, 2/ArrowRight = B, S = skip */
   useEffect(() => {
     if (state !== "idle") return;
 
@@ -270,100 +242,12 @@ export function ArenaView({ topicId }: ArenaViewProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [state, optionA, optionB, submitVote, submitSkip]);
 
-  /**
-   * Pointer drag handlers for Tinder-style swipe.
-   * Tracks horizontal movement, applies translation + rotation to cards.
-   */
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (state !== "idle") return;
-    pointerStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
-    isDraggingRef.current = true;
-    setIsDragging(true);
-    // Capture pointer so move/up events fire even if finger leaves the element
-    // (guard for jsdom where setPointerCapture is missing)
-    const el = e.currentTarget as HTMLElement;
-    if (el.setPointerCapture && e.pointerId != null) {
-      el.setPointerCapture(e.pointerId);
-    }
-  }, [state]);
-
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDraggingRef.current || !pointerStartRef.current) return;
-
-    const dx = e.clientX - pointerStartRef.current.x;
-    const dy = e.clientY - pointerStartRef.current.y;
-
-    // Ignore if vertical movement dominates (scrolling)
-    if (Math.abs(dy) > Math.abs(dx) * 1.5) {
-      isDraggingRef.current = false;
-      setIsDragging(false);
-      setDragX(0);
-      return;
-    }
-
-    dragXRef.current = dx;
-    setDragX(dx);
-  }, []);
-
-  const handlePointerUp = useCallback(
-    (_e: React.PointerEvent) => {
-      if (!isDraggingRef.current || !pointerStartRef.current) return;
-      isDraggingRef.current = false;
-      setIsDragging(false);
-
-      const dx = dragXRef.current;
-      const dt = Date.now() - pointerStartRef.current.time;
-      const absDx = Math.abs(dx);
-      const velocity = dt > 0 ? absDx / dt : 0;
-      pointerStartRef.current = null;
-
-      // Trigger vote if threshold OR velocity is high enough
-      if (absDx >= SWIPE_THRESHOLD || (absDx >= 40 && velocity >= 0.5)) {
-        const dir: FlyOffDir = dx < 0 ? "left" : "right";
-        setFlyOffDir(dir);
-        setDragX(dx * 3); // Exaggerate for fly-off
-
-        // After fly-off animation, submit the vote
-        setTimeout(() => {
-          if (dir === "left" && optionA) {
-            submitVote(optionA.id);
-          } else if (dir === "right" && optionB) {
-            submitVote(optionB.id);
-          }
-        }, FLY_OFF_DURATION);
-      } else {
-        // Snap back
-        setDragX(0);
-      }
-    },
-    [optionA, optionB, submitVote]
-  );
-
   // --- Render helpers ---
 
   const isRevealing = state === "revealing";
   const isSubmitting = state === "submitting";
-  const isDisabled = isRevealing || isSubmitting || flyOffDir !== null;
+  const isDisabled = isRevealing || isSubmitting;
   const hasVoteResult = voteResult !== null;
-
-  // Compute card transforms
-  const rotation = Math.max(-MAX_ROTATION, Math.min(MAX_ROTATION, (dragX / 200) * MAX_ROTATION));
-  const transformStyle = flyOffDir
-    ? `translateX(${dragX}px) rotate(${rotation}deg)`
-    : isDragging
-    ? `translateX(${dragX}px) rotate(${rotation}deg)`
-    : dragX !== 0
-    ? `translateX(0px) rotate(0deg)`
-    : undefined;
-  const transitionStyle = flyOffDir
-    ? `transform ${FLY_OFF_DURATION}ms ease-out, opacity ${FLY_OFF_DURATION}ms ease-out`
-    : isDragging
-    ? undefined
-    : "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)";
-
-  // Swipe overlay opacity (peek labels)
-  const leftOpacity = Math.min(1, Math.max(0, -dragX / 120));
-  const rightOpacity = Math.min(1, Math.max(0, dragX / 120));
 
   if (state === "loading") {
     return <ArenaLoadingSkeleton />;
@@ -414,87 +298,101 @@ export function ArenaView({ topicId }: ArenaViewProps) {
         </div>
       )}
 
-      {/* Swipe instruction */}
-      <div className="flex items-center justify-center text-[10px] text-subtle/50 sm:hidden">
-        <span aria-hidden="true">← swipe left for A • swipe right for B →</span>
-      </div>
-
-      {/* Arena cards container — swipeable surface */}
-      <div
-        ref={containerRef}
-        className="relative grid grid-cols-2 gap-2 sm:gap-4 select-none"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        role="group"
-        aria-label="Choose between two options. Swipe left for A, right for B."
-      >
-        {/* Swipe peek labels */}
-        {isDragging && !flyOffDir && (
-          <>
-            <div
-              className="absolute inset-0 z-20 flex items-center justify-start pl-4 pointer-events-none"
-              style={{ opacity: leftOpacity }}
+      {/* Split card */}
+      <div className="relative rounded-xl border-2 border-border/60 overflow-hidden bg-card/60" role="group" aria-label="Choose between two options">
+        <div className="grid grid-cols-2 divide-x divide-border/60">
+          {/* Left half — Option A */}
+          {optionA && (
+            <button
+              onClick={() => submitVote(optionA.id)}
+              disabled={isDisabled}
+              aria-label={`Pick ${optionA.name} (option A)`}
+              className={`relative flex flex-col items-center justify-center gap-2 p-4 sm:p-8 min-h-[120px] sm:min-h-[160px] transition-all duration-200 text-center ${
+                (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionA.id
+                  ? "bg-green-500/10"
+                  : (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionA.id
+                  ? "bg-red-500/5 opacity-50"
+                  : isDisabled
+                  ? "cursor-not-allowed opacity-60"
+                  : "hover:bg-accent/5 cursor-pointer active:scale-[0.98]"
+              }`}
             >
-              <span className="text-2xl font-black text-green-500 uppercase tracking-wider rotate-[-12deg] border-4 border-green-500 rounded-lg px-2 py-1">
+              <span
+                className="absolute top-2 left-2 w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full bg-muted text-[9px] sm:text-[10px] font-bold text-subtle"
+                aria-hidden="true"
+              >
                 A
               </span>
-            </div>
-            <div
-              className="absolute inset-0 z-20 flex items-center justify-end pr-4 pointer-events-none"
-              style={{ opacity: rightOpacity }}
+
+              <span className="text-xs sm:text-base font-semibold text-foreground leading-tight px-6">
+                {optionA.name}
+              </span>
+
+              {/* Pick prompt */}
+              {!(isRevealing || isSubmitting) && (
+                <span className="text-[9px] sm:text-[10px] text-subtle/40 italic">Tap to pick</span>
+              )}
+
+              {/* Winner badge */}
+              {(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionA.id && (
+                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-bold text-green-600 uppercase">
+                  Winner!
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Right half — Option B */}
+          {optionB && (
+            <button
+              onClick={() => submitVote(optionB.id)}
+              disabled={isDisabled}
+              aria-label={`Pick ${optionB.name} (option B)`}
+              className={`relative flex flex-col items-center justify-center gap-2 p-4 sm:p-8 min-h-[120px] sm:min-h-[160px] transition-all duration-200 text-center ${
+                (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionB.id
+                  ? "bg-green-500/10"
+                  : (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionB.id
+                  ? "bg-red-500/5 opacity-50"
+                  : isDisabled
+                  ? "cursor-not-allowed opacity-60"
+                  : "hover:bg-accent/5 cursor-pointer active:scale-[0.98]"
+              }`}
             >
-              <span className="text-2xl font-black text-green-500 uppercase tracking-wider rotate-[12deg] border-4 border-green-500 rounded-lg px-2 py-1">
+              <span
+                className="absolute top-2 right-2 w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full bg-muted text-[9px] sm:text-[10px] font-bold text-subtle"
+                aria-hidden="true"
+              >
                 B
               </span>
-            </div>
-          </>
-        )}
 
-        {/* Option A card */}
-        {optionA && (
-          <div
-            className="relative"
-            style={{
-              transform: transformStyle,
-              transition: transitionStyle,
-              opacity: flyOffDir === "right" ? 0.3 : 1,
-            }}
-          >
-            <ArenaCard
-              option={optionA}
-              label="A"
-              keyHint="1"
-              onPick={() => submitVote(optionA.id)}
-              disabled={isDisabled}
-              isWinner={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionA.id}
-              isLoser={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionA.id}
-            />
-          </div>
-        )}
+              <span className="text-xs sm:text-base font-semibold text-foreground leading-tight px-6">
+                {optionB.name}
+              </span>
 
-        {/* Option B card */}
-        {optionB && (
-          <div
-            className="relative"
-            style={{
-              transform: transformStyle,
-              transition: transitionStyle,
-              opacity: flyOffDir === "left" ? 0.3 : 1,
-            }}
-          >
-            <ArenaCard
-              option={optionB}
-              label="B"
-              keyHint="2"
-              onPick={() => submitVote(optionB.id)}
-              disabled={isDisabled}
-              isWinner={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionB.id}
-              isLoser={(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionB.id}
-            />
+              {/* Pick prompt */}
+              {!(isRevealing || isSubmitting) && (
+                <span className="text-[9px] sm:text-[10px] text-subtle/40 italic">Tap to pick</span>
+              )}
+
+              {/* Winner badge */}
+              {(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionB.id && (
+                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-bold text-green-600 uppercase">
+                  Winner!
+                </span>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* VS divider (centered overlay) */}
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none"
+          aria-hidden="true"
+        >
+          <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-background border border-border/80 shadow-sm">
+            <span className="text-[10px] sm:text-xs font-bold text-subtle/60 uppercase">VS</span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Skip button */}
@@ -509,7 +407,7 @@ export function ArenaView({ topicId }: ArenaViewProps) {
         </button>
       </div>
 
-      {/* Keyboard legend for desktop */}
+      {/* Keyboard legend (desktop only) */}
       <div className="hidden sm:flex items-center justify-center gap-4 text-[10px] text-subtle/50">
         <span>Press <kbd className="px-1 py-0.5 rounded border border-border/60 font-mono">1</kbd> or <kbd className="px-1 py-0.5 rounded border border-border/60 font-mono">←</kbd> for A</span>
         <span>•</span>
@@ -521,89 +419,19 @@ export function ArenaView({ topicId }: ArenaViewProps) {
   );
 }
 
-// --- ArenaCard sub-component ---
-
-interface ArenaCardProps {
-  option: ArenaOption;
-  label: string;
-  keyHint: string;
-  onPick: () => void;
-  disabled: boolean;
-  isWinner: boolean;
-  isLoser: boolean;
-}
-
-function ArenaCard({
-  option,
-  label,
-  keyHint,
-  onPick,
-  disabled,
-  isWinner,
-  isLoser,
-}: ArenaCardProps) {
-  return (
-    <button
-      onClick={onPick}
-      disabled={disabled}
-      aria-label={`Pick ${option.name} (option ${label})`}
-      className={`relative flex flex-col items-center justify-center gap-2 p-3 sm:p-8 rounded-xl border-2 transition-all duration-200 text-left w-full min-h-[100px] sm:min-h-[160px] ${
-        isWinner
-          ? "border-green-500 bg-green-500/10 scale-[1.02]"
-          : isLoser
-          ? "border-red-500/50 bg-red-500/5 opacity-60 scale-[0.98]"
-          : disabled
-          ? "border-border/40 bg-card/60 cursor-not-allowed opacity-60"
-          : "border-border/60 bg-card/60 hover:border-accent/60 hover:bg-accent/5 cursor-pointer active:scale-[0.98]"
-      }`}
-    >
-      {/* Label badge */}
-      <span
-        className="absolute top-2 left-2 w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full bg-muted text-[9px] sm:text-[10px] font-bold text-subtle"
-        aria-hidden="true"
-      >
-        {label}
-      </span>
-
-      {/* Keyboard hint (desktop only) */}
-      <span
-        className="absolute top-2 right-2 hidden sm:flex items-center justify-center px-1.5 py-0.5 rounded border border-border/60 text-[9px] font-mono text-subtle/50"
-        aria-hidden="true"
-      >
-        {keyHint}
-      </span>
-
-      {/* Option name */}
-      <span className="text-xs sm:text-base font-semibold text-foreground text-center leading-tight px-6">
-        {option.name}
-      </span>
-
-      {/* Pick prompt — hidden after vote */}
-      {!isWinner && !isLoser && (
-        <span className="text-[9px] sm:text-[10px] text-subtle/40 italic">Tap to pick</span>
-      )}
-
-      {/* Winner badge on reveal */}
-      {isWinner && (
-        <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-bold text-green-600 uppercase">
-          Winner!
-        </span>
-      )}
-    </button>
-  );
-}
-
 // --- Loading skeleton ---
 
 function ArenaLoadingSkeleton() {
   return (
     <div className="space-y-4" data-testid="arena-loading">
-      <div className="grid grid-cols-2 gap-2 sm:gap-4">
-        <div className="flex flex-col items-center justify-center gap-2 p-3 sm:p-8 rounded-xl border-2 border-border/40 bg-card/60 min-h-[100px] sm:min-h-[160px]">
-          <Skeleton className="h-4 sm:h-5 w-24 sm:w-32" />
-        </div>
-        <div className="flex flex-col items-center justify-center gap-2 p-3 sm:p-8 rounded-xl border-2 border-border/40 bg-card/60 min-h-[100px] sm:min-h-[160px]">
-          <Skeleton className="h-4 sm:h-5 w-24 sm:w-32" />
+      <div className="rounded-xl border-2 border-border/40 overflow-hidden bg-card/60">
+        <div className="grid grid-cols-2 divide-x divide-border/60">
+          <div className="flex flex-col items-center justify-center gap-2 p-4 sm:p-8 min-h-[120px] sm:min-h-[160px]">
+            <Skeleton className="h-4 sm:h-5 w-24 sm:w-32" />
+          </div>
+          <div className="flex flex-col items-center justify-center gap-2 p-4 sm:p-8 min-h-[120px] sm:min-h-[160px]">
+            <Skeleton className="h-4 sm:h-5 w-24 sm:w-32" />
+          </div>
         </div>
       </div>
       <div className="flex items-center justify-center">
