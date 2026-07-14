@@ -11,6 +11,7 @@ import { NavCreateButton } from "@/components/NavCreateButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ClerkProviderClient } from "@/components/ClerkProviderClient";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { ThemeProvider } from "next-themes";
 import { auth } from "@clerk/nextjs/server";
 import type { InitialState } from "@clerk/types";
@@ -18,6 +19,10 @@ import type { InitialState } from "@clerk/types";
 export const metadata: Metadata = {
   title: "RateAnything",
   description: "Rate anything. The world is watching.",
+  manifest: "/manifest.json",
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport = {
@@ -26,7 +31,7 @@ export const viewport = {
   maximumScale: 1,
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#131517" },
+    { media: "(prefers-color-scheme: dark)", color: "#a78bfa" },
   ],
 };
 
@@ -50,6 +55,9 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased flex flex-col">
         <ThemeProvider
           attribute="class"
@@ -96,6 +104,8 @@ export default async function RootLayout({
             </AuthProvider>
           </ClerkProviderClient>
         </ThemeProvider>
+        {/* PWA service worker registration — renders nothing */}
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

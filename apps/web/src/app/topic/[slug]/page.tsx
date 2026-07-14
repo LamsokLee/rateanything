@@ -12,6 +12,7 @@ import { CHART_COLORS } from "@/lib/chart-colors";
 import { RatingHistoryChart } from "@/components/RatingHistoryChart";
 import { OptionRow } from "@/components/OptionRow";
 import { CommentSection } from "@/components/CommentSection";
+import { ShareButton } from "@/components/ShareButton";
 
 interface TopicPageProps {
   params: { slug: string };
@@ -180,6 +181,9 @@ export default async function TopicPage({ params }: TopicPageProps) {
           )}
           <span className="text-subtle/30">•</span>
           <span className="font-mono">{totalVotes.toLocaleString()} votes</span>
+          {/* Share button — uses native share or clipboard fallback */}
+          <span className="text-subtle/30">•</span>
+          <ShareButton title={topic.title} />
         </div>
       </header>
 
