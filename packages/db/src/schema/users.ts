@@ -8,7 +8,7 @@ import { relations } from 'drizzle-orm';
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   clerkId: varchar('clerk_id', { length: 255 }).notNull().unique(),
-  username: varchar('username', { length: 50 }).notNull().unique(),
+  username: varchar('username', { length: 30 }).notNull().unique(),
   email: varchar('email', { length: 255 }).notNull(),
   avatarUrl: text('avatar_url'),
   bio: varchar('bio', { length: 500 }),

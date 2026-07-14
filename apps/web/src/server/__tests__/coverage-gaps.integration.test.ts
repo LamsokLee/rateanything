@@ -217,9 +217,9 @@ describe("ratings.getForOption controversial sort with cursor", () => {
     expect(result.ratings[2].score).toBe(5);
   });
 
-  // BUG: When avg is fractional (e.g. 5.5), the controversial sort fails with
-  // "invalid input syntax for type smallint" because Drizzle passes the avg as a
-  // parameter typed as smallint (matching ratings.score column). Works when avg is integer.
+  // FIXED: When avg is fractional (e.g. 5.5), the controversial sort now works correctly
+  // (previously failed with "invalid input syntax for type smallint" due to missing ::real cast).
+  
   it("controversial sort with cursor pagination (integer avg)", async () => {
     const caller = await createTestCaller(TEST_USERS.regular.clerkId);
     const guest = await createTestCaller(null);
@@ -249,23 +249,23 @@ describe("ratings.getForOption controversial sort with cursor", () => {
     expect(page2.ratings.length).toBeGreaterThanOrEqual(0);
   });
 
-  it("BUG: controversial sort crashes with fractional average (smallint cast)", async () => {
+  // FIXED: controversial sort now works with fractional averages (explicit ::real cast)
+  it("controversial sort works with fractional average", async () => {
     const caller = await createTestCaller(TEST_USERS.regular.clerkId);
     const guest = await createTestCaller(null);
     const { optionIds } = await createTopicWithOptions(caller, "Controversial Frac Bug");
 
-    // avg = (1+4+7+10)/4 = 5.5 — fractional avg triggers PG error
+    // avg = (1+4+7+10)/4 = 5.5 — fractional avg now handled correctly
     await caller.ratings.submit({ optionId: optionIds[0], score: 1 });
     await guest.ratings.submit({ optionId: optionIds[0], score: 4, guestFingerprint: "fp_frac_1" });
     await guest.ratings.submit({ optionId: optionIds[0], score: 7, guestFingerprint: "fp_frac_2" });
     await guest.ratings.submit({ optionId: optionIds[0], score: 10, guestFingerprint: "fp_frac_3" });
 
-    // BUG: This throws "invalid input syntax for type smallint: 5.5"
-    // because the COALESCE(AVG(score)::real, 5) result is passed as parameter
-    // but PG infers smallint type from the column context.
-    await expect(
-      caller.ratings.getForOption({ optionId: optionIds[0], sort: "controversial", limit: 10 })
-    ).rejects.toThrow(/invalid input syntax/);
+    // FIXED: No longer throws - fractional avg is properly cast to real
+    const result = await caller.ratings.getForOption({ optionId: optionIds[0], sort: "controversial", limit: 10 });
+    expect(result.ratings).toHaveLength(4);
+    // Most controversial (furthest from avg 5.5): score 1 (dist 4.5) and score 10 (dist 4.5)
+    expect([1, 10]).toContain(result.ratings[0].score);
   });
 });
 
@@ -494,8 +494,8 @@ describe("moderation auto-hide rating targetType", () => {
 describe("moderation.queue status filter", () => {
   it("returns empty when no reports match the status", async () => {
     const admin = await createTestCaller(TEST_USERS.admin.clerkId);
-    // No reports have status 'reviewing'
-    const result = await admin.moderation.queue({ status: "reviewing" });
+    // No reports have status 'reviewed'
+    const result = await admin.moderation.queue({ status: "reviewed" });
     expect(result.reports).toHaveLength(0);
     expect(result.nextCursor).toBeNull();
   });
@@ -662,13 +662,11 @@ describe("topics.trending cursor + category", () => {
   });
 });
 
-// ─── moderation.queue: "reviewing" status filter with no matching reports ─────
-// NOTE: The DB CHECK constraint (reports_status_check) does NOT include "reviewing"
-// as a valid status value. The Zod enum allows it as input but no reports can
-// actually have this status. The queue query runs but always returns empty.
+// ─── moderation.queue: "reviewed" status filter with no matching reports ─────
+// No reports default to 'reviewed' status, so querying for it returns empty.
 
-describe("moderation.queue reviewing status (empty result)", () => {
-  it("returns empty array for reviewing status (no reports can have this status)", async () => {
+describe("moderation.queue reviewed status (empty result)", () => {
+  it("returns empty array for reviewed status (no reports default to this status)", async () => {
     const regular = await createTestCaller(TEST_USERS.regular.clerkId);
     const admin = await createTestCaller(TEST_USERS.admin.clerkId);
     const { topicId } = await createTopicWithOptions(admin, "Reviewing Status Test2");
@@ -680,8 +678,8 @@ describe("moderation.queue reviewing status (empty result)", () => {
       reason: "spam",
     });
 
-    // Query for 'reviewing' — should be empty since no reports can have that status
-    const result = await admin.moderation.queue({ status: "reviewing" });
+    // Query for 'reviewed' — should be empty since no reports default to that status
+    const result = await admin.moderation.queue({ status: "reviewed" });
     expect(result.reports).toHaveLength(0);
   });
 });

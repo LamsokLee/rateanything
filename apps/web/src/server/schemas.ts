@@ -10,7 +10,7 @@ export const reportInputSchema = z.object({
   targetType: z.enum(["topic", "rating", "comment", "user"]),
   targetId: z.string().uuid(),
   reason: z.enum(["spam", "harassment", "hate_speech", "off_topic", "private_individual", "other"]),
-  details: z.string().max(1000).optional(),
+  details: z.string().max(500).optional(),
 });
 
 /** topics.create input schema */

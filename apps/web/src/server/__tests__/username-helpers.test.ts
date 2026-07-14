@@ -114,10 +114,9 @@ describe("sanitizeUsername (via createTRPCContext)", () => {
     expect(user.username).toBe("leading_trailing");
   });
 
-  // BUG: sanitizeUsername truncates to 50 chars, but the actual DB column is varchar(30).
-  // Usernames between 31-50 chars pass sanitizeUsername but fail at the DB level.
-  it("BUG: sanitizeUsername allows up to 50 chars but DB is varchar(30) — names 31+ chars fail", async () => {
-    const longName = "a".repeat(35); // passes sanitize (< 50) but exceeds DB varchar(30)
+  // FIXED: sanitizeUsername now truncates to 30 chars matching DB varchar(30).
+  it("sanitizeUsername truncates to 30 chars (matching DB varchar(30))", async () => {
+    const longName = "a".repeat(35); // sanitize now truncates to 30
     setClerkUser({
       id: "user_clerk_long",
       username: longName,
@@ -125,10 +124,13 @@ describe("sanitizeUsername (via createTRPCContext)", () => {
     });
 
     const createTRPCContext = await getCreateTRPCContext();
-    // Should throw because DB rejects > 30 chars
-    await expect(
-      createTRPCContext({ clerkUserId: "user_clerk_long" }),
-    ).rejects.toThrow(/value too long/);
+    // Should succeed — sanitizeUsername truncates to 30 chars before DB insert
+    const ctx = await createTRPCContext({ clerkUserId: "user_clerk_long" });
+    expect(ctx.auth).not.toBeNull();
+
+    const user = await getCreatedUser("user_clerk_long");
+    expect(user.username.length).toBeLessThanOrEqual(30);
+    expect(user.username).toBe("a".repeat(30));
   });
 
   it("usernames at exactly 30 chars are accepted by the DB", async () => {

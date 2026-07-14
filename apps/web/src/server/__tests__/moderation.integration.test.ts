@@ -153,8 +153,7 @@ describe("moderation.report", () => {
     ).rejects.toThrow();
   });
 
-  // BUG: Zod schema allows details up to 1000 chars, but the actual DB column is varchar(500).
-  // Sending 500 chars should succeed; anything > 500 will fail at the DB level despite passing validation.
+  // Zod schema correctly validates max 500 chars matching the DB varchar(500) column.
   it("accepts details up to 500 characters (actual DB limit)", async () => {
     const caller = await createTestCaller(TEST_USERS.regular.clerkId);
     const details500 = "a".repeat(500);
@@ -167,12 +166,12 @@ describe("moderation.report", () => {
     expect(result.id).toBeDefined();
   });
 
-  // BUG: Zod schema says max(1000), but DB column is varchar(500). Values between 501-1000
-  // pass Zod validation but fail at the DB level with "value too long for type character varying(500)".
-  it("BUG: details between 501-1000 chars pass Zod but fail at DB (varchar(500) mismatch)", async () => {
+  // FIXED: Zod schema now correctly validates max(500) to match DB varchar(500).
+  // Values > 500 are rejected at the Zod validation layer before reaching the DB.
+  it("details between 501-1000 chars are rejected by Zod validation (max 500)", async () => {
     const caller = await createTestCaller(TEST_USERS.regular.clerkId);
     const details501 = "a".repeat(501);
-    // This passes Zod validation (max 1000) but the DB rejects it
+    // Zod now rejects > 500 chars before it reaches the DB
     await expect(
       caller.moderation.report({
         targetType: "topic",
@@ -180,7 +179,7 @@ describe("moderation.report", () => {
         reason: "other",
         details: details501,
       }),
-    ).rejects.toThrow(/value too long/);
+    ).rejects.toThrow();
   });
 
   it("rejects details exceeding 1000 characters (Zod validation)", async () => {
@@ -357,12 +356,9 @@ describe("moderation.resolve", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  // BUG: The resolve handler sets status to 'dismissed' or 'resolved', but the actual DB
-  // has a CHECK constraint (reports_status_check) that only allows:
-  // 'pending', 'reviewed', 'actioned', 'dismissed', 'appealed'.
-  // The code's 'resolved' status is NOT in the DB constraint, so 'remove'/'warn'/'ban' actions
-  // all fail with "violates check constraint reports_status_check".
-  // Only 'dismiss' (which maps to 'dismissed' status) works because 'dismissed' IS in the constraint.
+  // FIXED: The resolve handler now correctly maps actions to valid DB statuses:
+  // 'dismiss' -> 'dismissed', 'remove'/'warn'/'ban' -> 'actioned'.
+  // DB CHECK constraint allows: 'pending', 'reviewed', 'actioned', 'dismissed', 'appealed'.
 
   it("admin can dismiss a report -> status becomes 'dismissed'", async () => {
     const regularCaller = await createTestCaller(TEST_USERS.regular.clerkId);
@@ -386,10 +382,8 @@ describe("moderation.resolve", () => {
     expect(resolved.resolvedAt).not.toBeNull();
   });
 
-  // BUG: 'remove' action tries to set status='resolved' which is not in DB check constraint.
-  // DB allows: 'pending', 'reviewed', 'actioned', 'dismissed', 'appealed'
-  // Code uses: 'resolved' — this violates the constraint.
-  it("BUG: resolve with 'remove' fails due to DB constraint mismatch (status='resolved' not allowed)", async () => {
+  // FIXED: 'remove' action now correctly sets status='actioned' which is in DB check constraint.
+  it("resolve with 'remove' succeeds and sets status to 'actioned'", async () => {
     const regularCaller = await createTestCaller(TEST_USERS.regular.clerkId);
     const { topicId } = await seedTopic(regularCaller, "Resolve Remove Topic");
     const report = await regularCaller.moderation.report({
@@ -399,16 +393,20 @@ describe("moderation.resolve", () => {
     });
 
     const adminCaller = await createTestCaller(TEST_USERS.admin.clerkId);
-    await expect(
-      adminCaller.moderation.resolve({
-        reportId: report.id,
-        action: "remove",
-      }),
-    ).rejects.toThrow(/reports_status_check/);
+    const result = await adminCaller.moderation.resolve({
+      reportId: report.id,
+      action: "remove",
+    });
+    expect(result).toEqual({ success: true, action: "remove" });
+
+    // Verify status in DB
+    const [resolved] = await db.select().from(reports).where(eq(reports.id, report.id)).limit(1);
+    expect(resolved.status).toBe("actioned");
+    expect(resolved.resolvedAt).not.toBeNull();
   });
 
-  // BUG: Same issue — 'warn' action also maps to 'resolved' status
-  it("BUG: resolve with 'warn' fails due to DB constraint mismatch", async () => {
+  // FIXED: 'warn' action now correctly sets status='actioned'
+  it("resolve with 'warn' succeeds and sets status to 'actioned'", async () => {
     const regularCaller = await createTestCaller(TEST_USERS.regular.clerkId);
     const { topicId } = await seedTopic(regularCaller, "Resolve Warn Topic");
     const report = await regularCaller.moderation.report({
@@ -418,16 +416,19 @@ describe("moderation.resolve", () => {
     });
 
     const adminCaller = await createTestCaller(TEST_USERS.admin.clerkId);
-    await expect(
-      adminCaller.moderation.resolve({
-        reportId: report.id,
-        action: "warn",
-      }),
-    ).rejects.toThrow(/reports_status_check/);
+    const result = await adminCaller.moderation.resolve({
+      reportId: report.id,
+      action: "warn",
+    });
+    expect(result).toEqual({ success: true, action: "warn" });
+
+    // Verify status in DB
+    const [resolved] = await db.select().from(reports).where(eq(reports.id, report.id)).limit(1);
+    expect(resolved.status).toBe("actioned");
   });
 
-  // BUG: Same issue — 'ban' action also maps to 'resolved' status
-  it("BUG: resolve with 'ban' fails due to DB constraint mismatch", async () => {
+  // FIXED: 'ban' action now correctly sets status='actioned'
+  it("resolve with 'ban' succeeds and sets status to 'actioned'", async () => {
     const regularCaller = await createTestCaller(TEST_USERS.regular.clerkId);
     const { topicId } = await seedTopic(regularCaller, "Resolve Ban Topic");
     const report = await regularCaller.moderation.report({
@@ -437,12 +438,15 @@ describe("moderation.resolve", () => {
     });
 
     const adminCaller = await createTestCaller(TEST_USERS.admin.clerkId);
-    await expect(
-      adminCaller.moderation.resolve({
-        reportId: report.id,
-        action: "ban",
-      }),
-    ).rejects.toThrow(/reports_status_check/);
+    const result = await adminCaller.moderation.resolve({
+      reportId: report.id,
+      action: "ban",
+    });
+    expect(result).toEqual({ success: true, action: "ban" });
+
+    // Verify status in DB
+    const [resolved] = await db.select().from(reports).where(eq(reports.id, report.id)).limit(1);
+    expect(resolved.status).toBe("actioned");
   });
 
   it("resolving a non-existent report throws NOT_FOUND", async () => {

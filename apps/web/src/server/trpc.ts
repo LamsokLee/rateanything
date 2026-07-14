@@ -55,7 +55,7 @@ function sanitizeUsername(raw: string): string {
     .replace(/[^a-z0-9_]/g, "_")
     .replace(/_{2,}/g, "_")
     .replace(/^_|_$/g, "")
-    .slice(0, 50) || "user";
+    .slice(0, 30) || "user";
 }
 
 /**
@@ -78,12 +78,12 @@ async function ensureUniqueUsername(desired: string, excludeClerkId?: string): P
 
     // Collision — append disambiguator
     const suffix = Math.random().toString(36).slice(2, 6);
-    candidate = `${desired.slice(0, 44)}_${suffix}`;
+    candidate = `${desired.slice(0, 24)}_${suffix}`;
     attempts++;
   }
 
   // Last resort: use clerkId suffix
-  return `${desired.slice(0, 41)}_${excludeClerkId?.slice(-8) ?? "x"}`;
+  return `${desired.slice(0, 21)}_${excludeClerkId?.slice(-8) ?? "x"}`;
 }
 
 /**

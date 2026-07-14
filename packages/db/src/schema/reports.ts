@@ -15,7 +15,7 @@ export const reportTargetTypeEnum = pgEnum('report_target_type', [
 
 /** Moderation workflow status */
 export const reportStatusEnum = pgEnum('report_status', [
-  'pending', 'reviewing', 'resolved', 'dismissed',
+  'pending', 'reviewed', 'actioned', 'dismissed', 'appealed',
 ]);
 
 export const reports = pgTable('reports', {

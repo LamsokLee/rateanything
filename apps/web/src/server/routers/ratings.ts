@@ -427,7 +427,7 @@ export const ratingsRouter = router({
               .from(ratings)
               .where(eq(ratings.optionId, optionId));
             const avg = avgResult?.avg ?? 5;
-            orderByClause = [sql`ABS(${ratings.score} - ${avg}) DESC`, desc(ratings.id)];
+            orderByClause = [sql`ABS(${ratings.score}::real - ${avg}::real) DESC`, desc(ratings.id)];
           }
 
           const results = await db

@@ -77,7 +77,7 @@ export const moderationRouter = router({
   /** Get the moderation queue (admin only) with cursor pagination */
   queue: adminProcedure
     .input(z.object({
-      status: z.enum(['pending', 'reviewing']).default('pending'),
+      status: z.enum(['pending', 'reviewed']).default('pending'),
       limit: z.number().int().min(1).max(50).default(20),
       cursor: z.string().optional(),
     }))
@@ -162,13 +162,13 @@ export const moderationRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
       }
 
-      if (report.status === 'resolved' || report.status === 'dismissed') {
+      if (report.status === 'actioned' || report.status === 'dismissed') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Report already resolved' });
       }
 
       await db.transaction(async (tx) => {
         // Update report status to resolved or dismissed
-        const resolvedStatus = action === 'dismiss' ? 'dismissed' : 'resolved';
+        const resolvedStatus = action === 'dismiss' ? 'dismissed' : 'actioned';
         await tx
           .update(reports)
           .set({
