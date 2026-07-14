@@ -3,6 +3,7 @@
  */
 import { getServerCaller } from "@/lib/server-trpc";
 import { TopicFeed } from "@/components/TopicFeed";
+import Link from "next/link";
 import { db, categories as categoriesTable, asc } from "@rateanything/db";
 
 export default async function HomePage() {
@@ -48,6 +49,24 @@ export default async function HomePage() {
           Rate anything. See where you stand.
         </p>
       </header>
+
+      {/* ─── ARENA CTA ─── */}
+      <Link
+        href="/?mode=arena"
+        className="block border border-border/60 rounded-xl bg-card/60 p-4 hover:border-accent/60 hover:bg-accent/5 transition-all duration-200 group"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-2xl" aria-hidden="true">⚔️</span>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground group-hover:text-accent-foreground transition-colors">
+              Try Arena Mode
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Pick a topic and vote head-to-head — which option is better?
+            </p>
+          </div>
+        </div>
+      </Link>
 
       <TopicFeed topics={topics} categories={categoriesList} />
     </div>

@@ -190,6 +190,32 @@ const expectedColumns: Record<string, ExpectedColumn[]> = {
     { name: "vote", type: "character varying", nullable: false },
     { name: "created_at", type: "timestamp with time zone", nullable: false },
   ],
+
+  arena_votes: [
+    { name: "id", type: "uuid", nullable: false },
+    { name: "topic_id", type: "uuid", nullable: false },
+    { name: "option_a_id", type: "uuid", nullable: false },
+    { name: "option_b_id", type: "uuid", nullable: false },
+    { name: "winner_option_id", type: "uuid", nullable: true },
+    { name: "user_id", type: "uuid", nullable: true },
+    { name: "guest_id", type: "uuid", nullable: true },
+    { name: "elo_a_before", type: "real", nullable: false },
+    { name: "elo_b_before", type: "real", nullable: false },
+    { name: "elo_a_after", type: "real", nullable: false },
+    { name: "elo_b_after", type: "real", nullable: false },
+    { name: "created_at", type: "timestamp with time zone", nullable: false },
+  ],
+
+  option_elo_stats: [
+    { name: "id", type: "uuid", nullable: false },
+    { name: "topic_id", type: "uuid", nullable: false },
+    { name: "option_id", type: "uuid", nullable: false },
+    { name: "elo_rating", type: "real", nullable: false },
+    { name: "match_count", type: "integer", nullable: false },
+    { name: "win_count", type: "integer", nullable: false },
+    { name: "loss_count", type: "integer", nullable: false },
+    { name: "updated_at", type: "timestamp with time zone", nullable: false },
+  ],
 };
 
 /**
@@ -232,6 +258,13 @@ const expectedIndexes: ExpectedIndex[] = [
 
   // User badges: composite primary key
   { name: "user_badges_pkey", tableName: "user_badges", definition: "user_id, badge_id" },
+
+  // Arena: unique constraints and indexes
+  { name: "uq_elo_topic_option", tableName: "option_elo_stats", definition: "topic_id, option_id" },
+  { name: "idx_elo_leaderboard", tableName: "option_elo_stats", definition: "topic_id, elo_rating" },
+  { name: "idx_arena_votes_topic_created", tableName: "arena_votes", definition: "topic_id, created_at" },
+  { name: "uq_arena_user_pair", tableName: "arena_votes", definition: "topic_id, user_id, option_a_id, option_b_id" },
+  { name: "uq_arena_guest_pair", tableName: "arena_votes", definition: "topic_id, guest_id, option_a_id, option_b_id" },
 ];
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────

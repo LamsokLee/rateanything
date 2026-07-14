@@ -1,7 +1,9 @@
 /**
- * Topic detail page — Polished comparison dashboard.
- * Hero chart, ranked options table with aligned columns, per-option
- * trend sparklines, and inline voting.
+ * Topic detail page — Arena-first comparison experience.
+ * Default mode is Arena (pairwise Elo voting). Users can switch to
+ * traditional 1-10 Ratings via the mode toggle.
+ * Retains: hero chart, ranked options table, per-option sparklines,
+ * comment section, JSON-LD, OpenGraph metadata.
  */
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -10,9 +12,9 @@ import { safeAuth } from "@/lib/safe-auth";
 import { getServerCaller } from "@/lib/server-trpc";
 import { CHART_COLORS } from "@/lib/chart-colors";
 import { RatingHistoryChart } from "@/components/RatingHistoryChart";
-import { OptionRow } from "@/components/OptionRow";
 import { CommentSection } from "@/components/CommentSection";
 import { ShareButton } from "@/components/ShareButton";
+import { TopicPageClient } from "@/components/TopicPageClient";
 
 interface TopicPageProps {
   params: { slug: string };
@@ -42,13 +44,6 @@ function formatRelativeTime(dateInput: Date | string): string {
   if (diffHr > 0) return `${diffHr}h ago`;
   if (diffMin > 0) return `${diffMin}m ago`;
   return "just now";
-}
-
-function getRankBadge(index: number): { bg: string; text: string } | null {
-  if (index === 0) return { bg: "#fbbf24", text: "#451a03" }; // gold
-  if (index === 1) return { bg: "#9ca3af", text: "#111827" }; // silver
-  if (index === 2) return { bg: "#b45309", text: "#ffffff" }; // bronze
-  return null;
 }
 
 /** Generate OpenGraph + Twitter meta tags for topic pages */
@@ -240,93 +235,32 @@ export default async function TopicPage({ params }: TopicPageProps) {
           )}
           {topic.createdAt && (
             <>
-              <span className="text-subtle/30">•</span>
+              <span className="text-subtle/30">&bull;</span>
               <span>{formatRelativeTime(topic.createdAt)}</span>
             </>
           )}
-          <span className="text-subtle/30">•</span>
+          <span className="text-subtle/30">&bull;</span>
           <span className="font-mono">{totalVotes.toLocaleString()} votes</span>
           {/* Share button — uses native share or clipboard fallback */}
-          <span className="text-subtle/30">•</span>
+          <span className="text-subtle/30">&bull;</span>
           <ShareButton title={topic.title} />
         </div>
       </header>
 
-      {/* ─── OPTIONS TABLE ─── */}
-      <section className="border border-border/60 rounded-xl bg-card/60 overflow-hidden">
-        <div className="px-5 py-4 border-b border-border/60 bg-card/80">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-              Options
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              Ranked by average rating
-            </span>
-          </div>
-        </div>
-
-        {/* Mobile: card layout */}
-        <div className="md:hidden divide-y divide-border/40">
-          {sortedOptions.map((option, index) => {
-            const optColor =
-              optionColorMap[option.id] ??
-              CHART_COLORS[index % CHART_COLORS.length];
-            const rankBadge = getRankBadge(index);
-
-            return (
-              <OptionRow
-                key={option.id}
-                optionId={option.id}
-                name={option.name}
-                initialAvgRating={option.avgRating ?? 0}
-                initialRatingCount={option.ratingCount ?? 0}
-                userRating={option.userRating}
-                rank={index + 1}
-                rankBadge={rankBadge}
-                optColor={optColor}
-                history={historyByOption[option.id]}
-                layout="mobile"
-              />
-            );
-          })}
-        </div>
-
-        {/* Desktop: table layout */}
-        <div className="hidden md:block">
-          {/* Table header */}
-          <div className="grid grid-cols-[2.5rem_1fr_5rem_6rem_19.5rem] gap-3 items-center px-5 py-3 bg-card/80 border-b border-border/60 text-[10px] uppercase tracking-wider font-semibold text-subtle/70">
-            <span className="text-center">#</span>
-            <span>Option</span>
-            <span className="text-right">Score</span>
-            <span className="text-right">Trend</span>
-            <span className="text-center">Your Rating</span>
-          </div>
-
-          {/* Table rows */}
-          {sortedOptions.map((option, index) => {
-            const optColor =
-              optionColorMap[option.id] ??
-              CHART_COLORS[index % CHART_COLORS.length];
-            const rankBadge = getRankBadge(index);
-
-            return (
-              <OptionRow
-                key={option.id}
-                optionId={option.id}
-                name={option.name}
-                initialAvgRating={option.avgRating ?? 0}
-                initialRatingCount={option.ratingCount ?? 0}
-                userRating={option.userRating}
-                rank={index + 1}
-                rankBadge={rankBadge}
-                optColor={optColor}
-                history={historyByOption[option.id]}
-                layout="desktop"
-              />
-            );
-          })}
-        </div>
-      </section>
+      {/* ─── ARENA / RATINGS MODE SWITCH + CONTENT ─── */}
+      <TopicPageClient
+        topicId={topic.id}
+        sortedOptions={sortedOptions.map((o) => ({
+          id: o.id,
+          name: o.name,
+          avgRating: o.avgRating,
+          ratingCount: o.ratingCount,
+          userRating: o.userRating,
+        }))}
+        optionColorMap={optionColorMap}
+        historyByOption={historyByOption}
+        chartColors={CHART_COLORS}
+      />
 
       {/* ─── SCORE HISTORY (collapsible) ─── */}
       {historyData && historyData.options.length > 0 && (

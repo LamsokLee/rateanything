@@ -73,7 +73,7 @@ export async function resetDb(): Promise<void> {
     TRUNCATE
       users, topics, options, ratings, comments, comment_votes,
       guests, reports, follows, categories, badges, user_badges,
-      collections, collection_items, notifications
+      arena_votes, option_elo_stats
     RESTART IDENTITY CASCADE
   `);
   await seedBaseline();

@@ -12,3 +12,4 @@ export * from './follows.js';
 export * from './reports.js';
 export * from './badges.js';
 export * from './comment-votes.js';
+export * from './arena.js';

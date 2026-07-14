@@ -8,6 +8,7 @@ import { ratingsRouter } from './routers/ratings';
 import { commentsRouter } from './routers/comments';
 import { usersRouter } from './routers/users';
 import { moderationRouter } from './routers/moderation';
+import { arenaRouter } from './routers/arena';
 
 export const appRouter = router({
   topics: topicsRouter,
@@ -15,6 +16,7 @@ export const appRouter = router({
   comments: commentsRouter,
   users: usersRouter,
   moderation: moderationRouter,
+  arena: arenaRouter,
 });
 
 /** Type export for client-side type inference */
