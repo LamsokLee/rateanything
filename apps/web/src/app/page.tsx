@@ -3,7 +3,6 @@
  */
 import { getServerCaller } from "@/lib/server-trpc";
 import { TopicFeed } from "@/components/TopicFeed";
-import { ArenaCta } from "@/components/ArenaCta";
 import { db, categories as categoriesTable, asc } from "@rateanything/db";
 
 export default async function HomePage() {
@@ -49,9 +48,6 @@ export default async function HomePage() {
           Rate anything. See where you stand.
         </p>
       </header>
-
-      {/* ─── ARENA CTA ─── */}
-      <ArenaCta />
 
       <TopicFeed topics={topics} categories={categoriesList} />
     </div>
