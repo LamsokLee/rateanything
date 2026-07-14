@@ -23,6 +23,12 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+let mockMode: 'arena' | 'rate' = 'rate';
+
+vi.mock('@/components/ModeProvider', () => ({
+  useMode: () => ({ mode: mockMode, setMode: vi.fn(), toggleMode: vi.fn() }),
+}));
+
 import { UserActivityTabs } from '../UserActivityTabs';
 
 const baseProps = {
@@ -45,6 +51,7 @@ describe('UserActivityTabs', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMode = 'rate';
   });
 
   it('renders three tab buttons: Votes, Comments, Topics', () => {
@@ -115,5 +122,21 @@ describe('UserActivityTabs', () => {
 
     const link = screen.getByRole('link', { name: /Best Programming Language/i });
     expect(link).toHaveAttribute('href', '/topic/best-programming-language');
+  });
+
+  it('hides Votes tab and vote counts in Arena mode', () => {
+    mockMode = 'arena';
+    render(<UserActivityTabs {...baseProps} />);
+
+    expect(screen.queryByRole('tab', { name: 'Votes' })).not.toBeInTheDocument();
+    expect(screen.queryByText('42 votes')).not.toBeInTheDocument();
+  });
+
+  it('shows Comments tab by default in Arena mode', () => {
+    mockMode = 'arena';
+    render(<UserActivityTabs {...baseProps} />);
+
+    expect(screen.getByRole('tab', { name: 'Comments' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('comment-history')).toBeInTheDocument();
   });
 });

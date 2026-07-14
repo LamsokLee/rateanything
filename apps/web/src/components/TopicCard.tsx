@@ -7,6 +7,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { useMode } from "./ModeProvider";
+
 interface TopicCardProps {
   topic: {
     id: string;
@@ -71,6 +73,7 @@ function getMostDivisivePreview(options: { name: string; avgRating: number }[]):
 
 export function TopicCard({ topic, featured = false }: TopicCardProps) {
   const router = useRouter();
+  const { mode } = useMode();
   const colors = CATEGORY_COLORS[topic.categorySlug ?? ""] ?? {
     bg: "rgba(161, 161, 170, 0.12)",
     text: "#a1a1aa",
@@ -91,7 +94,7 @@ export function TopicCard({ topic, featured = false }: TopicCardProps) {
       className={`group relative block border border-border rounded-lg bg-card transition-colors duration-150 hover:border-subtle overflow-hidden ${
         featured ? "col-span-1 md:col-span-2" : ""
       }`}
-      title={divisivePreview ?? undefined}
+      title={mode === "rate" ? (divisivePreview ?? undefined) : undefined}
     >
       {/* Category-colored left border (#10) */}
       <div
@@ -150,8 +153,8 @@ export function TopicCard({ topic, featured = false }: TopicCardProps) {
           <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{topic.description}</p>
         )}
 
-        {/* Top options with score bars */}
-        {displayOptions.length > 0 && (
+        {/* Top options with score bars — only in Rating mode */}
+        {mode === "rate" && displayOptions.length > 0 && (
           <div className="space-y-1.5 mb-3">
             {displayOptions.map((opt, idx) => {
               const score = opt.avgRating;
@@ -178,17 +181,19 @@ export function TopicCard({ topic, featured = false }: TopicCardProps) {
           </div>
         )}
 
-        {/* Footer: vote count + hover divisive preview (#6) */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-subtle font-mono">
-            {formatVoteCount(topic.totalRatings)} votes
-          </span>
-          {divisivePreview && (
-            <span className="text-[10px] text-subtle/70 hidden group-hover:inline transition-opacity duration-150">
-              &middot; {divisivePreview}
+        {/* Footer: vote count + hover divisive preview — only in Rating mode */}
+        {mode === "rate" && (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-subtle font-mono">
+              {formatVoteCount(topic.totalRatings)} votes
             </span>
-          )}
-        </div>
+            {divisivePreview && (
+              <span className="text-[10px] text-subtle/70 hidden group-hover:inline transition-opacity duration-150">
+                &middot; {divisivePreview}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </Link>
   );

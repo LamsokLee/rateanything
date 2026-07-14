@@ -4,8 +4,9 @@
  * UserActivityTabs — Accessible tabs wrapper for user profile activity sections.
  * Renders Votes, Comments, and Topics tabs with proper ARIA attributes and keyboard navigation.
  */
-import { useState, useCallback, type KeyboardEvent } from "react";
+import { useState, useCallback, useEffect, type KeyboardEvent } from "react";
 import Link from "next/link";
+import { useMode } from "./ModeProvider";
 import { UserRatingHistory } from "./UserRatingHistory";
 import { UserCommentHistory } from "./UserCommentHistory";
 
@@ -61,35 +62,43 @@ export function UserActivityTabs({
   initialCommentCursor,
   initialCreatedTopics,
 }: UserActivityTabsProps) {
+  const { mode } = useMode();
+  const availableTabs = mode === "arena" ? TABS.filter((t) => t.id !== "votes") : TABS;
   const [activeTab, setActiveTab] = useState<TabId>("votes");
+
+  useEffect(() => {
+    if (mode === "arena" && activeTab === "votes") {
+      setActiveTab("comments");
+    }
+  }, [mode, activeTab]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLButtonElement>) => {
-      const currentIndex = TABS.findIndex((t) => t.id === activeTab);
+      const currentIndex = availableTabs.findIndex((t) => t.id === activeTab);
       let newIndex = currentIndex;
 
       if (e.key === "ArrowRight") {
-        newIndex = (currentIndex + 1) % TABS.length;
+        newIndex = (currentIndex + 1) % availableTabs.length;
         e.preventDefault();
       } else if (e.key === "ArrowLeft") {
-        newIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+        newIndex = (currentIndex - 1 + availableTabs.length) % availableTabs.length;
         e.preventDefault();
       } else if (e.key === "Home") {
         newIndex = 0;
         e.preventDefault();
       } else if (e.key === "End") {
-        newIndex = TABS.length - 1;
+        newIndex = availableTabs.length - 1;
         e.preventDefault();
       }
 
       if (newIndex !== currentIndex) {
-        setActiveTab(TABS[newIndex].id);
+        setActiveTab(availableTabs[newIndex].id);
         // Focus the new tab button
-        const tabEl = document.getElementById(`tab-${TABS[newIndex].id}`);
+        const tabEl = document.getElementById(`tab-${availableTabs[newIndex].id}`);
         tabEl?.focus();
       }
     },
-    [activeTab]
+    [activeTab, availableTabs]
   );
 
   return (
@@ -100,7 +109,7 @@ export function UserActivityTabs({
         aria-label="User activity"
         className="flex border-b border-border/60 mb-4"
       >
-        {TABS.map((tab) => (
+        {availableTabs.map((tab) => (
           <button
             key={tab.id}
             id={`tab-${tab.id}`}
@@ -122,24 +131,26 @@ export function UserActivityTabs({
       </div>
 
       {/* Tab panels */}
-      <div
-        id="tabpanel-votes"
-        role="tabpanel"
-        aria-labelledby="tab-votes"
-        hidden={activeTab !== "votes"}
-      >
-        {activeTab === "votes" && (
-          initialRatingItems.length > 0 ? (
-            <UserRatingHistory
-              initialItems={initialRatingItems}
-              initialCursor={initialRatingCursor}
-              username={username}
-            />
-          ) : (
-            <p className="text-sm text-subtle">No votes yet.</p>
-          )
-        )}
-      </div>
+      {mode === "rate" && (
+        <div
+          id="tabpanel-votes"
+          role="tabpanel"
+          aria-labelledby="tab-votes"
+          hidden={activeTab !== "votes"}
+        >
+          {activeTab === "votes" && (
+            initialRatingItems.length > 0 ? (
+              <UserRatingHistory
+                initialItems={initialRatingItems}
+                initialCursor={initialRatingCursor}
+                username={username}
+              />
+            ) : (
+              <p className="text-sm text-subtle">No votes yet.</p>
+            )
+          )}
+        </div>
+      )}
 
       <div
         id="tabpanel-comments"
@@ -177,9 +188,11 @@ export function UserActivityTabs({
                           {topic.categoryName}
                         </span>
                       )}
-                      <span className="text-[11px] text-subtle font-mono">
-                        {topic.totalRatings} votes
-                      </span>
+                      {mode === "rate" && (
+                        <span className="text-[11px] text-subtle font-mono">
+                          {topic.totalRatings} votes
+                        </span>
+                      )}
                     </div>
                     <h3 className="text-sm font-semibold text-foreground line-clamp-1">
                       {topic.title}

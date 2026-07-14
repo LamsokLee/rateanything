@@ -10,6 +10,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+let mockMode: 'arena' | 'rate' = 'rate';
+
+vi.mock('@/components/ModeProvider', () => ({
+  useMode: () => ({ mode: mockMode, setMode: vi.fn(), toggleMode: vi.fn() }),
+}));
+
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) => (
     <a href={href} {...props}>{children}</a>
@@ -42,6 +48,7 @@ describe('TopicCard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMode = 'rate';
   });
 
   it('renders topic title as a link to /topic/{slug}', () => {
@@ -197,6 +204,22 @@ describe('TopicCard', () => {
     render(<TopicCard topic={topicNoCategory} />);
 
     expect(screen.queryByText('Tech')).not.toBeInTheDocument();
+  });
+
+  it('hides vote count and score bars in Arena mode', () => {
+    mockMode = 'arena';
+    render(<TopicCard topic={baseTopic} />);
+
+    expect(screen.queryByText('42 votes')).not.toBeInTheDocument();
+    expect(screen.queryByText('8.5')).not.toBeInTheDocument();
+    expect(screen.queryByText('7.2')).not.toBeInTheDocument();
+  });
+
+  it('still renders topic title in Arena mode', () => {
+    mockMode = 'arena';
+    render(<TopicCard topic={baseTopic} />);
+
+    expect(screen.getByText('Best Programming Languages')).toBeInTheDocument();
   });
 
   it('does not render topOptions section when topOptions is empty', () => {

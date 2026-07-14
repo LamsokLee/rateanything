@@ -9,6 +9,8 @@ import { NavSearch } from "@/components/NavSearch";
 import { NavAuth } from "@/components/NavAuth";
 import { NavCreateButton } from "@/components/NavCreateButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { GlobalModeToggle } from "@/components/GlobalModeToggle";
+import { ModeProvider } from "@/components/ModeProvider";
 import { ClerkProviderClient } from "@/components/ClerkProviderClient";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -70,37 +72,40 @@ export default async function RootLayout({
             initialState={initialState}
           >
             <AuthProvider>
-              <nav className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-sm">
-                <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 gap-3">
-                  <Link
-                    href="/"
-                    className="text-lg font-bold text-foreground transition-colors duration-200 hover:text-foreground/80 shrink-0"
-                  >
-                    RateAnything
-                  </Link>
+              <ModeProvider>
+                <nav className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-sm">
+                  <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 gap-3">
+                    <Link
+                      href="/"
+                      className="text-lg font-bold text-foreground transition-colors duration-200 hover:text-foreground/80 shrink-0"
+                    >
+                      RateAnything
+                    </Link>
 
-                  <div className="hidden sm:flex flex-1 max-w-sm mx-4">
-                    <NavSearch />
+                    <div className="hidden sm:flex flex-1 max-w-sm mx-4">
+                      <NavSearch />
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <GlobalModeToggle />
+                      <NavCreateButton />
+
+                      <ThemeToggle />
+                      <NavAuth />
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <NavCreateButton />
-
-                    <ThemeToggle />
-                    <NavAuth />
+                </nav>
+                <main className="mx-auto max-w-5xl px-4 py-6 flex-1 w-full">
+                  {children}
+                </main>
+                <footer className="border-t border-border mt-12">
+                  <div className="mx-auto max-w-5xl px-4 py-4 flex items-center justify-center">
+                    <span className="text-[11px] text-subtle/70">
+                      RateAnything © 2026 • Built for hot takes
+                    </span>
                   </div>
-                </div>
-              </nav>
-              <main className="mx-auto max-w-5xl px-4 py-6 flex-1 w-full">
-                {children}
-              </main>
-              <footer className="border-t border-border mt-12">
-                <div className="mx-auto max-w-5xl px-4 py-4 flex items-center justify-center">
-                  <span className="text-[11px] text-subtle/70">
-                    RateAnything © 2026 • Built for hot takes
-                  </span>
-                </div>
-              </footer>
+                </footer>
+              </ModeProvider>
             </AuthProvider>
           </ClerkProviderClient>
         </ThemeProvider>

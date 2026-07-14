@@ -14,6 +14,7 @@ import { CHART_COLORS } from "@/lib/chart-colors";
 import { RatingHistoryChart } from "@/components/RatingHistoryChart";
 import { CommentSection } from "@/components/CommentSection";
 import { ShareButton } from "@/components/ShareButton";
+import { ModeOnly } from "@/components/ModeOnly";
 import { TopicPageClient } from "@/components/TopicPageClient";
 
 interface TopicPageProps {
@@ -240,9 +241,11 @@ export default async function TopicPage({ params }: TopicPageProps) {
             </>
           )}
           <span className="text-subtle/30">&bull;</span>
-          <span className="font-mono">{totalVotes.toLocaleString()} votes</span>
-          {/* Share button — uses native share or clipboard fallback */}
-          <span className="text-subtle/30">&bull;</span>
+          <ModeOnly mode="rate">
+            <span className="font-mono">{totalVotes.toLocaleString()} votes</span>
+            {/* Share button — uses native share or clipboard fallback */}
+            <span className="text-subtle/30">&bull;</span>
+          </ModeOnly>
           <ShareButton title={topic.title} />
         </div>
       </header>
@@ -262,25 +265,27 @@ export default async function TopicPage({ params }: TopicPageProps) {
         chartColors={CHART_COLORS}
       />
 
-      {/* ─── SCORE HISTORY (collapsible) ─── */}
+      {/* ─── SCORE HISTORY (collapsible) — only in Rating mode ─── */}
       {historyData && historyData.options.length > 0 && (
-        <details className="border border-border/60 rounded-xl bg-card/90 group">
-          <summary className="flex items-center gap-2 px-5 py-4 cursor-pointer select-none text-sm font-semibold text-foreground uppercase tracking-wide hover:bg-muted/20 transition-colors duration-100 list-none [&::-webkit-details-marker]:hidden">
-            <svg
-              className="w-4 h-4 text-subtle/70 transition-transform duration-200 group-open:rotate-90"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-            Score history
-          </summary>
-          <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-0">
-            <RatingHistoryChart data={historyData.options} />
-          </div>
-        </details>
+        <ModeOnly mode="rate">
+          <details className="border border-border/60 rounded-xl bg-card/90 group">
+            <summary className="flex items-center gap-2 px-5 py-4 cursor-pointer select-none text-sm font-semibold text-foreground uppercase tracking-wide hover:bg-muted/20 transition-colors duration-100 list-none [&::-webkit-details-marker]:hidden">
+              <svg
+                className="w-4 h-4 text-subtle/70 transition-transform duration-200 group-open:rotate-90"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              Score history
+            </summary>
+            <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-0">
+              <RatingHistoryChart data={historyData.options} />
+            </div>
+          </details>
+        </ModeOnly>
       )}
 
       {/* ─── COMMENT SECTION ─── */}

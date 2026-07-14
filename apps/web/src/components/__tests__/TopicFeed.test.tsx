@@ -16,6 +16,12 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+let mockMode: 'arena' | 'rate' = 'rate';
+
+vi.mock('@/components/ModeProvider', () => ({
+  useMode: () => ({ mode: mockMode, setMode: vi.fn(), toggleMode: vi.fn() }),
+}));
+
 import { TopicFeed } from '../TopicFeed';
 
 const mockCategories = [
@@ -74,6 +80,7 @@ describe('TopicFeed', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMode = 'rate';
   });
 
   it('renders all topics as TopicCards', () => {

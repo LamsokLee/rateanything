@@ -2,16 +2,12 @@
 
 /**
  * TopicPageClient — Client-side wrapper for the topic detail page.
- * Manages the mode switch between Arena (default) and Ratings.
+ * Renders Arena or Ratings content based on the global mode switch.
  *
  * Arena mode renders the ArenaView (pairwise comparison) + ArenaLeaderboard.
  * Ratings mode renders the existing OptionRow table with 1-10 inline voting.
- *
- * Mode state is driven by URL ?mode= param (via TopicModeToggle)
- * with Arena as the default, matching the "Arena-first" requirement.
  */
-import { useSearchParams } from "next/navigation";
-import { TopicModeToggle } from "./TopicModeToggle";
+import { useMode } from "./ModeProvider";
 import { ArenaView } from "./ArenaView";
 import { ArenaLeaderboard } from "./ArenaLeaderboard";
 import { OptionRow } from "./OptionRow";
@@ -52,29 +48,22 @@ export function TopicPageClient({
   historyByOption,
   chartColors,
 }: TopicPageClientProps) {
-  const searchParams = useSearchParams();
-  // Arena is the default mode — "Arena-first" requirement
-  const modeParam = searchParams.get("mode");
-  const mode: "arena" | "rate" = modeParam === "rate" ? "rate" : "arena";
+  const { mode } = useMode();
 
   return (
     <div className="space-y-4">
-      {/* Mode toggle — always visible, URL-param driven */}
-      <div className="flex items-center justify-between">
-        <TopicModeToggle mode={mode} />
-        {mode === "arena" && (
-          <span className="text-[10px] text-subtle/50 hidden sm:inline">
-            Pick your favorite in each matchup
-          </span>
-        )}
-      </div>
+      {mode === "arena" && (
+        <span className="text-[10px] text-subtle/50 hidden sm:inline">
+          Pick your favorite in each matchup
+        </span>
+      )}
 
       {/* Arena panel */}
       {mode === "arena" && (
         <div
           id="panel-arena"
           role="tabpanel"
-          aria-labelledby="tab-arena"
+          aria-labelledby="global-tab-arena"
           className="space-y-6"
         >
           <ArenaView topicId={topicId} />
@@ -87,7 +76,7 @@ export function TopicPageClient({
         <div
           id="panel-ratings"
           role="tabpanel"
-          aria-labelledby="tab-ratings"
+          aria-labelledby="global-tab-rate"
         >
           <section className="border border-border/60 rounded-xl bg-card/60 overflow-hidden">
             <div className="px-5 py-4 border-b border-border/60 bg-card/80">

@@ -2,25 +2,20 @@
 import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@/components/AuthProvider', () => ({
   useAuth: vi.fn(() => ({ user: { id: 'u1', displayName: 'Test', username: 'test' }, isLoading: false, isSignedIn: true })),
 }));
 
-/**
- * Mock Next.js navigation hooks.
- * useSearchParams returns a URLSearchParams instance that we control.
- * useRouter returns a push mock to capture navigation calls.
- */
-const mockPush = vi.fn();
-let mockSearchParams = new URLSearchParams('');
+let mockMode: 'arena' | 'rate' = 'arena';
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush }),
-  useSearchParams: () => mockSearchParams,
+vi.mock('@/components/ModeProvider', () => ({
+  useMode: () => ({ mode: mockMode, setMode: vi.fn(), toggleMode: vi.fn() }),
 }));
+
+// Mock fetch for ArenaView and ArenaLeaderboard (hangs by default)
+vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
 
 import { TopicPageClient } from '../TopicPageClient';
 
@@ -45,35 +40,28 @@ describe('TopicPageClient', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: no ?mode= param (arena is default)
-    mockSearchParams = new URLSearchParams('');
-    // Mock fetch for ArenaView and ArenaLeaderboard (hangs by default)
-    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    mockMode = 'arena';
   });
 
-  it('defaults to Arena mode', () => {
+  it('defaults to Arena panel', () => {
     render(<TopicPageClient {...DEFAULT_PROPS} />);
 
-    // Arena tab should be selected
-    expect(screen.getByRole('tab', { name: /arena/i })).toHaveAttribute('aria-selected', 'true');
-    // Arena panel should be visible (query by id)
     expect(document.getElementById('panel-arena')).toBeInTheDocument();
+    expect(document.getElementById('panel-ratings')).not.toBeInTheDocument();
   });
 
   it('does not render Ratings panel in Arena mode', () => {
     render(<TopicPageClient {...DEFAULT_PROPS} />);
 
-    // Ratings panel should NOT be visible
     expect(document.getElementById('panel-ratings')).not.toBeInTheDocument();
   });
 
-  it('switches to Ratings mode when Ratings tab is clicked', async () => {
-    // Simulate ?mode=rate in URL for the re-render after click
-    mockSearchParams = new URLSearchParams('mode=rate');
+  it('renders Ratings panel in Rating mode', () => {
+    mockMode = 'rate';
     render(<TopicPageClient {...DEFAULT_PROPS} />);
 
-    // With mode=rate in params, Ratings panel should appear with option names
-    await waitFor(() => {
+    // Ratings panel should appear with option names
+    waitFor(() => {
       expect(document.getElementById('panel-ratings')).toBeInTheDocument();
       expect(screen.getAllByText('Alpha').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Beta').length).toBeGreaterThanOrEqual(1);
@@ -81,51 +69,24 @@ describe('TopicPageClient', () => {
     });
   });
 
-  it('hides Arena panel when in Ratings mode', () => {
-    mockSearchParams = new URLSearchParams('mode=rate');
+  it('hides Arena panel when in Rating mode', () => {
+    mockMode = 'rate';
     render(<TopicPageClient {...DEFAULT_PROPS} />);
 
     expect(document.getElementById('panel-arena')).not.toBeInTheDocument();
   });
 
-  it('switches back to Arena mode from Ratings', () => {
-    // Start in arena mode (default)
-    mockSearchParams = new URLSearchParams('');
+  it('renders the ranked options table in Rating mode', () => {
+    mockMode = 'rate';
     render(<TopicPageClient {...DEFAULT_PROPS} />);
 
-    // Arena panel visible
-    expect(document.getElementById('panel-arena')).toBeInTheDocument();
-  });
-
-  it('renders the ranked options table in Ratings mode', () => {
-    mockSearchParams = new URLSearchParams('mode=rate');
-    render(<TopicPageClient {...DEFAULT_PROPS} />);
-
-    // Should show "Options" heading and "Ranked by average rating" subtitle
     expect(screen.getByText('Options')).toBeInTheDocument();
     expect(screen.getByText('Ranked by average rating')).toBeInTheDocument();
   });
 
-  it('always shows the mode switch', () => {
+  it('does not render a local mode toggle', () => {
     render(<TopicPageClient {...DEFAULT_PROPS} />);
 
-    expect(screen.getByRole('tablist', { name: /topic interaction mode/i })).toBeInTheDocument();
-  });
-
-  it('calls router.push with ?mode=rate when Rate tab is clicked', async () => {
-    render(<TopicPageClient {...DEFAULT_PROPS} />);
-
-    await userEvent.click(screen.getByRole('tab', { name: /rate 1-10/i }));
-
-    expect(mockPush).toHaveBeenCalledWith('?mode=rate', { scroll: false });
-  });
-
-  it('calls router.push without mode param when Arena tab is clicked', async () => {
-    mockSearchParams = new URLSearchParams('mode=rate');
-    render(<TopicPageClient {...DEFAULT_PROPS} />);
-
-    await userEvent.click(screen.getByRole('tab', { name: /arena/i }));
-
-    expect(mockPush).toHaveBeenCalledWith('?', { scroll: false });
+    expect(screen.queryByRole('tablist', { name: /topic interaction mode/i })).not.toBeInTheDocument();
   });
 });
