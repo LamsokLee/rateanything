@@ -135,8 +135,73 @@ export default async function TopicPage({ params }: TopicPageProps) {
     });
   }
 
+
+  // --- JSON-LD Structured Data ---
+  const totalRatings = topic.totalRatings ?? totalVotes;
+  const weightedAvg =
+    totalRatings > 0
+      ? sortedOptions.reduce(
+          (sum, o) => sum + (o.avgRating ?? 0) * (o.ratingCount ?? 0),
+          0
+        ) / totalRatings
+      : 0;
+
+  const jsonLd =
+    totalRatings > 0
+      ? {
+          "@context": "https://schema.org",
+          "@type": "Thing",
+          name: topic.title,
+          ...(topic.description ? { description: topic.description } : {}),
+          url: `https://rating.fyi/topic/${topic.slug}`,
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: Math.round(weightedAvg * 100) / 100,
+            bestRating: 10,
+            worstRating: 1,
+            ratingCount: totalRatings,
+          },
+        }
+      : null;
+
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://rating.fyi" },
+      ...(topic.category
+        ? [
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: topic.category.name,
+              item: `https://rating.fyi/category/${topic.category.slug}`,
+            },
+          ]
+        : []),
+      {
+        "@type": "ListItem",
+        position: topic.category ? 3 : 2,
+        name: topic.title,
+      },
+    ],
+  };
+
   return (
     <div className="space-y-6">
+
+      {/* JSON-LD Structured Data */}
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+
       {/* ─── HEADER ─── */}
       <header className="border border-border/60 rounded-xl bg-card/60 p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
