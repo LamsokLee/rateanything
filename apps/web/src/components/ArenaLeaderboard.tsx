@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * ArenaLeaderboard — Displays Elo-ranked options for a topic.
- * Fetches from arena.getLeaderboard and renders a ranked table.
- * Shows: rank, name, Elo rating, match count, and win%.
+ * ArenaLeaderboard — Displays ranked options for a topic.
+ * Fetches from arena.getLeaderboard and renders a ranked list.
+ * Shows: rank, name, and match count.
  *
  * States handled: loading, empty (no data), insufficient data, populated.
  */
@@ -15,11 +15,7 @@ interface LeaderboardEntry {
   optionId: string;
   name: string;
   imageUrl: string | null;
-  eloRating: number;
   matchCount: number;
-  winCount: number;
-  lossCount: number;
-  winPercentage: number;
 }
 
 interface ArenaLeaderboardProps {
@@ -162,25 +158,11 @@ export function ArenaLeaderboard({ topicId, refreshKey = 0 }: ArenaLeaderboardPr
             </span>
 
             {/* Stats */}
-            <div className="flex items-center gap-4 shrink-0">
-              <div className="text-right">
-                <span className="block font-mono text-sm font-bold text-foreground">
-                  {entry.eloRating.toFixed(0)}
-                </span>
-                <span className="block text-[9px] text-subtle/50 uppercase">Elo</span>
-              </div>
-              <div className="text-right hidden sm:block">
-                <span className="block font-mono text-xs text-muted-foreground">
-                  {entry.winPercentage}%
-                </span>
-                <span className="block text-[9px] text-subtle/50 uppercase">Win</span>
-              </div>
-              <div className="text-right hidden sm:block">
-                <span className="block font-mono text-xs text-muted-foreground">
-                  {entry.matchCount}
-                </span>
-                <span className="block text-[9px] text-subtle/50 uppercase">Matches</span>
-              </div>
+            <div className="text-right shrink-0">
+              <span className="block font-mono text-xs text-muted-foreground">
+                {entry.matchCount}
+              </span>
+              <span className="block text-[9px] text-subtle/50 uppercase">Matches</span>
             </div>
           </div>
         ))}

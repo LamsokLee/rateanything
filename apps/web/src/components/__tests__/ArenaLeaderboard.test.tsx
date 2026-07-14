@@ -12,10 +12,10 @@ const MOCK_LEADERBOARD_RESPONSE = {
     data: {
       json: {
         entries: [
-          { rank: 1, optionId: 'opt-1', name: 'Top Option', imageUrl: null, eloRating: 1600, matchCount: 20, winCount: 15, lossCount: 5, winPercentage: 75 },
-          { rank: 2, optionId: 'opt-2', name: 'Second Option', imageUrl: null, eloRating: 1520, matchCount: 18, winCount: 10, lossCount: 8, winPercentage: 56 },
-          { rank: 3, optionId: 'opt-3', name: 'Third Option', imageUrl: null, eloRating: 1480, matchCount: 16, winCount: 7, lossCount: 9, winPercentage: 44 },
-          { rank: 4, optionId: 'opt-4', name: 'Fourth Option', imageUrl: null, eloRating: 1400, matchCount: 14, winCount: 4, lossCount: 10, winPercentage: 29 },
+          { rank: 1, optionId: 'opt-1', name: 'Top Option', imageUrl: null, matchCount: 20 },
+          { rank: 2, optionId: 'opt-2', name: 'Second Option', imageUrl: null, matchCount: 18 },
+          { rank: 3, optionId: 'opt-3', name: 'Third Option', imageUrl: null, matchCount: 16 },
+          { rank: 4, optionId: 'opt-4', name: 'Fourth Option', imageUrl: null, matchCount: 14 },
         ],
         totalVotes: 34,
       },
@@ -39,7 +39,7 @@ const MOCK_EARLY_RESPONSE = {
     data: {
       json: {
         entries: [
-          { rank: 1, optionId: 'opt-1', name: 'Leader', imageUrl: null, eloRating: 1516, matchCount: 2, winCount: 1, lossCount: 1, winPercentage: 50 },
+          { rank: 1, optionId: 'opt-1', name: 'Leader', imageUrl: null, matchCount: 2 },
         ],
         totalVotes: 1,
       },
@@ -155,19 +155,6 @@ describe('ArenaLeaderboard', () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it('displays Elo rating for each entry', async () => {
-    vi.stubGlobal('fetch', vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve(MOCK_LEADERBOARD_RESPONSE) })
-    ));
-
-    render(<ArenaLeaderboard topicId="topic-1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText('1600')).toBeInTheDocument();
-      expect(screen.getByText('1520')).toBeInTheDocument();
     });
   });
 });

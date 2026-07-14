@@ -16,7 +16,7 @@
  *   - Swipe detection uses pointer events (no gesture library needed).
  *     A horizontal swipe > 50px with velocity > 0.3px/ms triggers pick.
  *   - Results are concealed until a pick is made, then briefly revealed
- *     with the Elo delta before loading the next pair.
+ *     with the winner badge before loading the next pair.
  */
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "./AuthProvider";
@@ -33,7 +33,6 @@ interface ArenaOption {
   id: string;
   name: string;
   imageUrl: string | null;
-  eloRating: number;
   matchCount: number;
 }
 
@@ -45,8 +44,6 @@ type ArenaState = "loading" | "idle" | "submitting" | "revealing" | "error" | "i
 
 interface VoteResult {
   winnerId: string;
-  newEloA: number;
-  newEloB: number;
 }
 
 /** Simple browser fingerprint for guest arena votes */
@@ -157,14 +154,9 @@ export function ArenaView({ topicId }: ArenaViewProps) {
           throw new Error(msg);
         }
 
-        const resBody = await res.json();
-        const result = resBody?.result?.data?.json;
+        await res.json();
 
-        setVoteResult({
-          winnerId: winnerOptionId,
-          newEloA: result?.newEloA ?? optionA.eloRating,
-          newEloB: result?.newEloB ?? optionB.eloRating,
-        });
+        setVoteResult({ winnerId: winnerOptionId });
         setMatchCount((c) => c + 1);
         setState("revealing");
 
@@ -358,8 +350,6 @@ export function ArenaView({ topicId }: ArenaViewProps) {
             disabled={isDisabled}
             isWinner={isRevealing && voteResult?.winnerId === optionA.id}
             isLoser={isRevealing && voteResult?.winnerId !== optionA.id}
-            newElo={isRevealing ? voteResult?.newEloA ?? null : null}
-            oldElo={optionA.eloRating}
           />
         )}
 
@@ -381,8 +371,6 @@ export function ArenaView({ topicId }: ArenaViewProps) {
             disabled={isDisabled}
             isWinner={isRevealing && voteResult?.winnerId === optionB.id}
             isLoser={isRevealing && voteResult?.winnerId !== optionB.id}
-            newElo={isRevealing ? voteResult?.newEloB ?? null : null}
-            oldElo={optionB.eloRating}
           />
         )}
       </div>
@@ -421,8 +409,6 @@ interface ArenaCardProps {
   disabled: boolean;
   isWinner: boolean;
   isLoser: boolean;
-  newElo: number | null;
-  oldElo: number;
 }
 
 function ArenaCard({
@@ -433,11 +419,7 @@ function ArenaCard({
   disabled,
   isWinner,
   isLoser,
-  newElo,
-  oldElo,
 }: ArenaCardProps) {
-  const eloDelta = newElo !== null ? newElo - oldElo : null;
-
   return (
     <button
       onClick={onPick}
@@ -474,27 +456,12 @@ function ArenaCard({
         {option.name}
       </span>
 
-      {/* Elo display — concealed until reveal */}
-      {isWinner || isLoser ? (
-        <div className="flex flex-col items-center gap-0.5">
-          <span className="font-mono text-xs text-muted-foreground">
-            Elo: {newElo?.toFixed(0)}
-          </span>
-          {eloDelta !== null && (
-            <span
-              className={`font-mono text-[11px] font-semibold ${
-                eloDelta > 0 ? "text-green-500" : eloDelta < 0 ? "text-red-500" : "text-subtle"
-              }`}
-            >
-              {eloDelta > 0 ? "+" : ""}{eloDelta.toFixed(0)}
-            </span>
-          )}
-        </div>
-      ) : (
+      {/* Pick prompt — hidden after vote */}
+      {!isWinner && !isLoser && (
         <span className="text-[10px] text-subtle/40 italic">Tap to pick</span>
       )}
 
-      {/* Winner/Loser badge on reveal */}
+      {/* Winner badge on reveal */}
       {isWinner && (
         <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-bold text-green-600 uppercase">
           Winner!
@@ -512,11 +479,9 @@ function ArenaLoadingSkeleton() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         <div className="flex flex-col items-center justify-center gap-3 p-6 sm:p-8 rounded-xl border-2 border-border/40 bg-card/60 min-h-[120px] sm:min-h-[160px]">
           <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-3 w-16" />
         </div>
         <div className="flex flex-col items-center justify-center gap-3 p-6 sm:p-8 rounded-xl border-2 border-border/40 bg-card/60 min-h-[120px] sm:min-h-[160px]">
           <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-3 w-16" />
         </div>
       </div>
       <div className="flex items-center justify-center">
