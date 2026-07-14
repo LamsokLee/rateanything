@@ -9,15 +9,19 @@
  * consistency, with slightly more generous padding.
  *
  * State flow:
- *   idle → picking (user taps a half) → submitting (winner shown optimistically)
- *        → revealing (vote confirmed) → idle (next pair)
+ *   idle → picking (user taps a half) → submitting (brief winner flash)
+ *        → loading (fetch next pair) → idle (next pair ready)
+ *
+ * Vote is fire-and-forget: the POST to arena.vote is sent in the background
+ * without blocking the UI. The next pair is fetched immediately after a brief
+ * 100ms winner flash so the user can keep voting with minimal friction.
  */
 import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "./AuthProvider";
 import { Skeleton } from "./Skeleton";
 
-/** Time to show result before loading next pair (ms) */
-const REVEAL_DURATION = 600;
+/** Brief winner flash before loading next pair (ms) */
+const WINNER_FLASH_MS = 100;
 
 interface ArenaOption {
   id: string;
@@ -110,110 +114,87 @@ export function ArenaView({ topicId }: ArenaViewProps) {
     }
   }, [fetchPairData]);
 
-  /** Submit a vote for the given winner */
+  /** Submit a vote for the given winner — fire and forget for snappy UX */
   const submitVote = useCallback(
     async (winnerOptionId: string) => {
       if (!optionA || !optionB || state !== "idle") return;
-      setVoteResult({ winnerId: winnerOptionId });
+
       setState("submitting");
+      setVoteResult({ winnerId: winnerOptionId });
+      setMatchCount((c) => c + 1);
 
-      try {
-        const payload: {
-          topicId: string;
-          optionAId: string;
-          optionBId: string;
-          winnerOptionId: string;
-          guestFingerprint?: string;
-        } = {
-          topicId,
-          optionAId: optionA.id,
-          optionBId: optionB.id,
-          winnerOptionId,
-        };
-
-        if (!user) {
-          payload.guestFingerprint = getFingerprint();
-        }
-
-        const res = await fetch("/api/trpc/arena.vote", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ json: payload }),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => null);
-          const msg = errBody?.error?.json?.message ?? errBody?.error?.message ?? "Vote failed";
-          throw new Error(msg);
-        }
-
-        await res.json();
-
-        setMatchCount((c) => c + 1);
-        setState("revealing");
-
-        const nextPairPromise = fetchPairData();
-        const timerPromise = new Promise<void>((resolve) =>
-          setTimeout(resolve, REVEAL_DURATION)
-        );
-
-        try {
-          const [result] = await Promise.all([nextPairPromise, timerPromise]);
-          if (result.insufficientOptions) {
-            setState("insufficient");
-            return;
-          }
-          if (!result.optionA || !result.optionB) {
-            setState("empty");
-            return;
-          }
-          setOptionA(result.optionA);
-          setOptionB(result.optionB);
-          setVoteResult(null);
-          setState("idle");
-        } catch (err) {
-          setState("error");
-          setErrorMessage(err instanceof Error ? err.message : "Network error");
-        }
-      } catch (err) {
-        setState("error");
-        setErrorMessage(err instanceof Error ? err.message : "Vote failed");
-      }
-    },
-    [optionA, optionB, state, topicId, user, fetchPairData]
-  );
-
-  /** Submit a skip */
-  const submitSkip = useCallback(async () => {
-    if (!optionA || !optionB || state !== "idle") return;
-    setState("submitting");
-
-    try {
+      // Build payload
       const payload: {
         topicId: string;
         optionAId: string;
         optionBId: string;
+        winnerOptionId: string;
         guestFingerprint?: string;
       } = {
         topicId,
         optionAId: optionA.id,
         optionBId: optionB.id,
+        winnerOptionId,
       };
 
       if (!user) {
         payload.guestFingerprint = getFingerprint();
       }
 
-      await fetch("/api/trpc/arena.skip", {
+      // Fire vote in background — don't block the UI on network latency
+      fetch("/api/trpc/arena.vote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ json: payload }),
-      });
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => null);
+            const msg = errBody?.error?.json?.message ?? errBody?.error?.message ?? "Vote failed";
+            console.error("Vote failed:", msg);
+          }
+        })
+        .catch((err) => {
+          console.error("Vote error:", err);
+        });
 
-      fetchPair();
-    } catch {
-      fetchPair();
+      // Brief winner flash, then immediately fetch next pair
+      setTimeout(() => {
+        fetchPair();
+      }, WINNER_FLASH_MS);
+    },
+    [optionA, optionB, state, topicId, user, fetchPair]
+  );
+
+  /** Submit a skip — fire and forget */
+  const submitSkip = useCallback(async () => {
+    if (!optionA || !optionB || state !== "idle") return;
+    setState("submitting");
+
+    const payload: {
+      topicId: string;
+      optionAId: string;
+      optionBId: string;
+      guestFingerprint?: string;
+    } = {
+      topicId,
+      optionAId: optionA.id,
+      optionBId: optionB.id,
+    };
+
+    if (!user) {
+      payload.guestFingerprint = getFingerprint();
     }
+
+    // Fire skip in background
+    fetch("/api/trpc/arena.skip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ json: payload }),
+    }).catch(console.error);
+
+    // Fetch next pair immediately — no delay needed for skip
+    fetchPair();
   }, [optionA, optionB, state, topicId, user, fetchPair]);
 
   // Initial fetch on mount
@@ -244,9 +225,8 @@ export function ArenaView({ topicId }: ArenaViewProps) {
 
   // --- Render helpers ---
 
-  const isRevealing = state === "revealing";
   const isSubmitting = state === "submitting";
-  const isDisabled = isRevealing || isSubmitting;
+  const isDisabled = isSubmitting;
   const hasVoteResult = voteResult !== null;
 
   if (state === "loading") {
@@ -308,9 +288,9 @@ export function ArenaView({ topicId }: ArenaViewProps) {
               disabled={isDisabled}
               aria-label={`Pick ${optionA.name} (option A)`}
               className={`relative flex flex-col items-center justify-center gap-2 p-4 sm:p-8 min-h-[120px] sm:min-h-[160px] transition-all duration-200 text-center ${
-                (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionA.id
+                isSubmitting && hasVoteResult && voteResult!.winnerId === optionA.id
                   ? "bg-green-500/10"
-                  : (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionA.id
+                  : isSubmitting && hasVoteResult && voteResult!.winnerId !== optionA.id
                   ? "bg-red-500/5 opacity-50"
                   : isDisabled
                   ? "cursor-not-allowed opacity-60"
@@ -329,12 +309,12 @@ export function ArenaView({ topicId }: ArenaViewProps) {
               </span>
 
               {/* Pick prompt */}
-              {!(isRevealing || isSubmitting) && (
+              {!isSubmitting && (
                 <span className="text-[9px] sm:text-[10px] text-subtle/40 italic">Tap to pick</span>
               )}
 
               {/* Winner badge */}
-              {(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionA.id && (
+              {isSubmitting && hasVoteResult && voteResult!.winnerId === optionA.id && (
                 <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-bold text-green-600 uppercase">
                   Winner!
                 </span>
@@ -349,9 +329,9 @@ export function ArenaView({ topicId }: ArenaViewProps) {
               disabled={isDisabled}
               aria-label={`Pick ${optionB.name} (option B)`}
               className={`relative flex flex-col items-center justify-center gap-2 p-4 sm:p-8 min-h-[120px] sm:min-h-[160px] transition-all duration-200 text-center ${
-                (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionB.id
+                isSubmitting && hasVoteResult && voteResult!.winnerId === optionB.id
                   ? "bg-green-500/10"
-                  : (isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId !== optionB.id
+                  : isSubmitting && hasVoteResult && voteResult!.winnerId !== optionB.id
                   ? "bg-red-500/5 opacity-50"
                   : isDisabled
                   ? "cursor-not-allowed opacity-60"
@@ -370,12 +350,12 @@ export function ArenaView({ topicId }: ArenaViewProps) {
               </span>
 
               {/* Pick prompt */}
-              {!(isRevealing || isSubmitting) && (
+              {!isSubmitting && (
                 <span className="text-[9px] sm:text-[10px] text-subtle/40 italic">Tap to pick</span>
               )}
 
               {/* Winner badge */}
-              {(isRevealing || isSubmitting) && hasVoteResult && voteResult!.winnerId === optionB.id && (
+              {isSubmitting && hasVoteResult && voteResult!.winnerId === optionB.id && (
                 <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-bold text-green-600 uppercase">
                   Winner!
                 </span>
