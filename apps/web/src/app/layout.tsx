@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   description: "Rate anything. The world is watching.",
   manifest: "/manifest.json",
   other: {
-    "apple-mobile-web-app-capable": "yes",
+    "mobile-web-app-capable": "yes",
   },
 };
 
