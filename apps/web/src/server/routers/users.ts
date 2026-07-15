@@ -7,6 +7,7 @@ import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { getCached } from "../cache";
 import {
   db, users, follows, badges, userBadges, ratings, comments, options, topics, categories,
+  arenaVotes, alias,
   eq, and, sql, desc,
 } from "@rateanything/db";
 
@@ -278,6 +279,97 @@ export const usersRouter = router({
         .limit(limit);
 
       return { items: results };
+    }),
+
+  /** Get a user's arena vote history with pagination (excludes skips) */
+  getArenaVoteHistory: publicProcedure
+    .input(z.object({
+      username: z.string(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(50).default(20),
+    }))
+    .query(async ({ input }) => {
+      const { username, cursor, limit } = input;
+
+      // Find user by username
+      const [user] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+
+      const conditions = [
+        eq(arenaVotes.userId, user.id),
+        // Exclude skips — only include votes where a winner was chosen
+        sql`${arenaVotes.winnerOptionId} IS NOT NULL`,
+      ];
+
+      if (cursor) {
+        let decoded: { id: string; createdAt: string };
+        try {
+          decoded = JSON.parse(Buffer.from(cursor, "base64").toString());
+        } catch {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid cursor" });
+        }
+        conditions.push(
+          sql`(${arenaVotes.createdAt}, ${arenaVotes.id}) < (${decoded.createdAt}::timestamptz, ${decoded.id})`
+        );
+      }
+
+      // Alias the options table twice: once for winner, once for loser
+      const winnerOpt = alias(options, "winner_opt");
+      const loserOpt = alias(options, "loser_opt");
+
+      const results = await db
+        .select({
+          id: arenaVotes.id,
+          createdAt: arenaVotes.createdAt,
+          topicTitle: topics.title,
+          topicSlug: topics.slug,
+          winnerName: winnerOpt.name,
+          loserName: loserOpt.name,
+        })
+        .from(arenaVotes)
+        .innerJoin(topics, eq(arenaVotes.topicId, topics.id))
+        // Join winner option directly on winnerOptionId
+        .innerJoin(winnerOpt, eq(arenaVotes.winnerOptionId, winnerOpt.id))
+        // Join loser option: the pair member that is NOT the winner.
+        // CASE: if winner == optionA then loser is optionB, else loser is optionA
+        .innerJoin(
+          loserOpt,
+          sql`${loserOpt.id} = CASE
+            WHEN ${arenaVotes.winnerOptionId} = ${arenaVotes.optionAId} THEN ${arenaVotes.optionBId}
+            ELSE ${arenaVotes.optionAId}
+          END`
+        )
+        .where(and(...conditions))
+        .orderBy(desc(arenaVotes.createdAt), desc(arenaVotes.id))
+        .limit(limit + 1);
+
+      let nextCursor: string | null = null;
+      if (results.length > limit) {
+        const lastItem = results[limit - 1];
+        nextCursor = Buffer.from(
+          JSON.stringify({ id: lastItem.id, createdAt: lastItem.createdAt })
+        ).toString("base64");
+        results.pop();
+      }
+
+      return {
+        items: results.map((r) => ({
+          id: r.id,
+          topicTitle: r.topicTitle,
+          topicSlug: r.topicSlug,
+          winnerName: r.winnerName,
+          loserName: r.loserName,
+          createdAt: r.createdAt,
+        })),
+        nextCursor,
+      };
     }),
 
   /** Follow another user */

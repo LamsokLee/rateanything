@@ -11,6 +11,12 @@ vi.mock('../UserRatingHistory', () => ({
   ),
 }));
 
+vi.mock('../UserArenaVoteHistory', () => ({
+  UserArenaVoteHistory: ({ initialItems }: { initialItems: unknown[] }) => (
+    <div data-testid="arena-vote-history">Arena votes: {initialItems.length}</div>
+  ),
+}));
+
 vi.mock('../UserCommentHistory', () => ({
   UserCommentHistory: ({ initialItems }: { initialItems: unknown[] }) => (
     <div data-testid="comment-history">Comment items: {initialItems.length}</div>
@@ -37,6 +43,10 @@ const baseProps = {
     { topicTitle: 'Best Language', topicSlug: 'best-language', optionName: 'Rust', score: 9, createdAt: new Date().toISOString() },
   ],
   initialRatingCursor: null,
+  initialArenaVoteItems: [
+    { id: 'av-1', topicTitle: 'Best IDE', topicSlug: 'best-ide', winnerName: 'VS Code', loserName: 'Vim', createdAt: new Date().toISOString() },
+  ],
+  initialArenaVoteCursor: null,
   initialCommentItems: [
     { id: 'cm1', content: 'Nice topic', topicTitle: 'Best Language', topicSlug: 'best-language', score: 3, createdAt: new Date().toISOString() },
   ],
@@ -124,19 +134,30 @@ describe('UserActivityTabs', () => {
     expect(link).toHaveAttribute('href', '/topic/best-programming-language');
   });
 
-  it('hides Votes tab and vote counts in Arena mode', () => {
+  it('shows Votes tab in Arena mode with arena vote history', () => {
     mockMode = 'arena';
     render(<UserActivityTabs {...baseProps} />);
 
-    expect(screen.queryByRole('tab', { name: 'Votes' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Votes' })).toBeInTheDocument();
+    // Vote counts are hidden in arena mode (topics section)
     expect(screen.queryByText('42 votes')).not.toBeInTheDocument();
   });
 
-  it('shows Comments tab by default in Arena mode', () => {
+  it('renders arena vote history when Votes tab clicked in arena mode', async () => {
     mockMode = 'arena';
     render(<UserActivityTabs {...baseProps} />);
 
-    expect(screen.getByRole('tab', { name: 'Comments' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByTestId('comment-history')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Votes' }));
+
+    expect(screen.getByTestId('arena-vote-history')).toBeInTheDocument();
+  });
+
+  it('shows Votes tab by default in Arena mode (with arena history)', () => {
+    mockMode = 'arena';
+    render(<UserActivityTabs {...baseProps} />);
+
+    expect(screen.getByRole('tab', { name: 'Votes' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('arena-vote-history')).toBeInTheDocument();
   });
 });

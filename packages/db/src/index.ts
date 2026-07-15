@@ -58,3 +58,6 @@ export {
   avg, count, sum,
   desc, asc, ilike, inArray,
 } from "drizzle-orm";
+
+/** Re-export pg-core utilities */
+export { alias } from "drizzle-orm/pg-core";

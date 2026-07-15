@@ -4,10 +4,11 @@
  * UserActivityTabs — Accessible tabs wrapper for user profile activity sections.
  * Renders Votes, Comments, and Topics tabs with proper ARIA attributes and keyboard navigation.
  */
-import { useState, useCallback, useEffect, type KeyboardEvent } from "react";
+import { useState, useCallback, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useMode } from "./ModeProvider";
 import { UserRatingHistory } from "./UserRatingHistory";
+import { UserArenaVoteHistory } from "./UserArenaVoteHistory";
 import { UserCommentHistory } from "./UserCommentHistory";
 
 interface RatingHistoryItem {
@@ -15,6 +16,15 @@ interface RatingHistoryItem {
   topicSlug: string;
   optionName: string;
   score: number;
+  createdAt: Date | string;
+}
+
+interface ArenaVoteHistoryItem {
+  id: string;
+  topicTitle: string;
+  topicSlug: string;
+  winnerName: string;
+  loserName: string;
   createdAt: Date | string;
 }
 
@@ -41,6 +51,8 @@ interface UserActivityTabsProps {
   username: string;
   initialRatingItems: RatingHistoryItem[];
   initialRatingCursor: string | null;
+  initialArenaVoteItems: ArenaVoteHistoryItem[];
+  initialArenaVoteCursor: string | null;
   initialCommentItems: CommentHistoryItem[];
   initialCommentCursor: string | null;
   initialCreatedTopics: CreatedTopicItem[];
@@ -58,47 +70,42 @@ export function UserActivityTabs({
   username,
   initialRatingItems,
   initialRatingCursor,
+  initialArenaVoteItems,
+  initialArenaVoteCursor,
   initialCommentItems,
   initialCommentCursor,
   initialCreatedTopics,
 }: UserActivityTabsProps) {
   const { mode } = useMode();
-  const availableTabs = mode === "arena" ? TABS.filter((t) => t.id !== "votes") : TABS;
   const [activeTab, setActiveTab] = useState<TabId>("votes");
-
-  useEffect(() => {
-    if (mode === "arena" && activeTab === "votes") {
-      setActiveTab("comments");
-    }
-  }, [mode, activeTab]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLButtonElement>) => {
-      const currentIndex = availableTabs.findIndex((t) => t.id === activeTab);
+      const currentIndex = TABS.findIndex((t) => t.id === activeTab);
       let newIndex = currentIndex;
 
       if (e.key === "ArrowRight") {
-        newIndex = (currentIndex + 1) % availableTabs.length;
+        newIndex = (currentIndex + 1) % TABS.length;
         e.preventDefault();
       } else if (e.key === "ArrowLeft") {
-        newIndex = (currentIndex - 1 + availableTabs.length) % availableTabs.length;
+        newIndex = (currentIndex - 1 + TABS.length) % TABS.length;
         e.preventDefault();
       } else if (e.key === "Home") {
         newIndex = 0;
         e.preventDefault();
       } else if (e.key === "End") {
-        newIndex = availableTabs.length - 1;
+        newIndex = TABS.length - 1;
         e.preventDefault();
       }
 
       if (newIndex !== currentIndex) {
-        setActiveTab(availableTabs[newIndex].id);
+        setActiveTab(TABS[newIndex].id);
         // Focus the new tab button
-        const tabEl = document.getElementById(`tab-${availableTabs[newIndex].id}`);
+        const tabEl = document.getElementById(`tab-${TABS[newIndex].id}`);
         tabEl?.focus();
       }
     },
-    [activeTab, availableTabs]
+    [activeTab]
   );
 
   return (
@@ -109,7 +116,7 @@ export function UserActivityTabs({
         aria-label="User activity"
         className="flex border-b border-border/60 mb-4"
       >
-        {availableTabs.map((tab) => (
+        {TABS.map((tab) => (
           <button
             key={tab.id}
             id={`tab-${tab.id}`}
@@ -131,14 +138,20 @@ export function UserActivityTabs({
       </div>
 
       {/* Tab panels */}
-      {mode === "rate" && (
-        <div
-          id="tabpanel-votes"
-          role="tabpanel"
-          aria-labelledby="tab-votes"
-          hidden={activeTab !== "votes"}
-        >
-          {activeTab === "votes" && (
+      <div
+        id="tabpanel-votes"
+        role="tabpanel"
+        aria-labelledby="tab-votes"
+        hidden={activeTab !== "votes"}
+      >
+        {activeTab === "votes" && (
+          mode === "arena" ? (
+            <UserArenaVoteHistory
+              initialItems={initialArenaVoteItems}
+              initialCursor={initialArenaVoteCursor}
+              username={username}
+            />
+          ) : (
             initialRatingItems.length > 0 ? (
               <UserRatingHistory
                 initialItems={initialRatingItems}
@@ -148,9 +161,9 @@ export function UserActivityTabs({
             ) : (
               <p className="text-sm text-subtle">No votes yet.</p>
             )
-          )}
-        </div>
-      )}
+          )
+        )}
+      </div>
 
       <div
         id="tabpanel-comments"

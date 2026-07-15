@@ -25,6 +25,9 @@ export default async function UserPage({ params }: UserPageProps) {
   let createdTopicsResult: Awaited<
     ReturnType<Awaited<ReturnType<typeof getServerCaller>>["users"]["getCreatedTopics"]>
   > | null = null;
+  let arenaVoteResult: Awaited<
+    ReturnType<Awaited<ReturnType<typeof getServerCaller>>["users"]["getArenaVoteHistory"]>
+  > | null = null;
 
   try {
     const caller = await getServerCaller();
@@ -34,6 +37,14 @@ export default async function UserPage({ params }: UserPageProps) {
     createdTopicsResult = await caller.users.getCreatedTopics({ username, limit: 20 });
   } catch {
     notFound();
+  }
+
+  // Arena votes degrade gracefully to empty rather than 404ing the entire profile
+  try {
+    const caller = await getServerCaller();
+    arenaVoteResult = await caller.users.getArenaVoteHistory({ username, limit: 20 });
+  } catch {
+    arenaVoteResult = null;
   }
 
   if (!profile) {
@@ -76,6 +87,8 @@ export default async function UserPage({ params }: UserPageProps) {
           username={username}
           initialRatingItems={historyResult?.items ?? []}
           initialRatingCursor={historyResult?.nextCursor ?? null}
+          initialArenaVoteItems={arenaVoteResult?.items ?? []}
+          initialArenaVoteCursor={arenaVoteResult?.nextCursor ?? null}
           initialCommentItems={commentResult?.items ?? []}
           initialCommentCursor={commentResult?.nextCursor ?? null}
           initialCreatedTopics={createdTopicsResult?.items ?? []}

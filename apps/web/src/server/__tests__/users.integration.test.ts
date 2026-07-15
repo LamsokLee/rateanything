@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { resetDb, createTestCaller, TEST_USERS } from "@/test/helpers";
 import {
   db, sql, users, follows, comments, ratings, options, topics,
+  arenaVotes, optionEloStats,
   eq, and,
 } from "@rateanything/db";
 
@@ -376,6 +377,137 @@ describe("users.getCreatedTopics", () => {
 
     expect(result.items.length).toBe(1);
     expect(result.items[0].title).toBe("Regular User Topic");
+  });
+});
+
+// ─── users.getArenaVoteHistory ─────────────────────────────────────────────────
+
+describe("users.getArenaVoteHistory", () => {
+  /** Seeds an arena vote directly into the DB for a given user + topic + option pair */
+  async function seedArenaVote(
+    userId: string,
+    topicId: string,
+    optionAId: string,
+    optionBId: string,
+    winnerOptionId: string | null,
+  ) {
+    // Canonicalize pair order (A < B)
+    const [canonA, canonB] = optionAId < optionBId
+      ? [optionAId, optionBId]
+      : [optionBId, optionAId];
+
+    await db.insert(arenaVotes).values({
+      topicId,
+      optionAId: canonA,
+      optionBId: canonB,
+      winnerOptionId,
+      userId,
+      eloABefore: 1500,
+      eloBBefore: 1500,
+      eloAAfter: winnerOptionId ? 1516 : 1500,
+      eloBAfter: winnerOptionId ? 1484 : 1500,
+    });
+  }
+
+  it("returns arena votes with winner and loser names", async () => {
+    const caller = await createTestCaller(TEST_USERS.regular.clerkId);
+    const { topicId, slug, optionIds } = await seedTopic(caller, "Arena Vote Topic", ["Alpha", "Beta"]);
+    const user = await getUserByClerkId(TEST_USERS.regular.clerkId);
+
+    // Vote: Alpha wins over Beta
+    await seedArenaVote(user!.id, topicId, optionIds[0], optionIds[1], optionIds[0]);
+
+    const history = await caller.users.getArenaVoteHistory({
+      username: TEST_USERS.regular.username,
+    });
+
+    expect(history.items.length).toBe(1);
+    expect(history.items[0]).toMatchObject({
+      topicTitle: "Arena Vote Topic",
+      topicSlug: slug,
+      winnerName: "Alpha",
+      loserName: "Beta",
+    });
+    expect(history.items[0].createdAt).toBeDefined();
+  });
+
+  it("excludes skips (winnerOptionId is null)", async () => {
+    const caller = await createTestCaller(TEST_USERS.regular.clerkId);
+    const { topicId, optionIds } = await seedTopic(caller, "Skip Test Topic", ["X", "Y"]);
+    const user = await getUserByClerkId(TEST_USERS.regular.clerkId);
+
+    // One real vote, one skip
+    await seedArenaVote(user!.id, topicId, optionIds[0], optionIds[1], optionIds[0]);
+
+    // Seed a second topic pair for the skip (same pair can't be voted twice)
+    const { topicId: topicId2, optionIds: optionIds2 } = await seedTopic(caller, "Skip Test Topic 2", ["M", "N"]);
+    await seedArenaVote(user!.id, topicId2, optionIds2[0], optionIds2[1], null);
+
+    const history = await caller.users.getArenaVoteHistory({
+      username: TEST_USERS.regular.username,
+    });
+
+    // Only the non-skip vote should appear
+    expect(history.items.length).toBe(1);
+    expect(history.items[0].winnerName).toBe("X");
+  });
+
+  it("supports cursor-based pagination", async () => {
+    const caller = await createTestCaller(TEST_USERS.regular.clerkId);
+    const user = await getUserByClerkId(TEST_USERS.regular.clerkId);
+
+    // Create 3 topics with votes (each unique pair per topic)
+    for (let i = 0; i < 3; i++) {
+      const { topicId, optionIds } = await seedTopic(caller, `Pagination Topic ${i}`, ["W", "L"]);
+      await seedArenaVote(user!.id, topicId, optionIds[0], optionIds[1], optionIds[0]);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const page1 = await caller.users.getArenaVoteHistory({
+      username: TEST_USERS.regular.username,
+      limit: 2,
+    });
+    expect(page1.items.length).toBe(2);
+    expect(page1.nextCursor).not.toBeNull();
+
+    const page2 = await caller.users.getArenaVoteHistory({
+      username: TEST_USERS.regular.username,
+      limit: 2,
+      cursor: page1.nextCursor!,
+    });
+    expect(page2.items.length).toBe(1);
+    expect(page2.nextCursor).toBeNull();
+
+    // No overlap
+    const allTitles = [...page1.items, ...page2.items].map((i) => i.topicTitle);
+    expect(new Set(allTitles).size).toBe(3);
+  });
+
+  it("throws NOT_FOUND for unknown username", async () => {
+    const caller = await createTestCaller(null);
+    await expect(
+      caller.users.getArenaVoteHistory({ username: "ghost_arena_user" })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("excludes other users' votes", async () => {
+    const regularCaller = await createTestCaller(TEST_USERS.regular.clerkId);
+    const adminCaller = await createTestCaller(TEST_USERS.admin.clerkId);
+    const regularUser = await getUserByClerkId(TEST_USERS.regular.clerkId);
+    const adminUser = await getUserByClerkId(TEST_USERS.admin.clerkId);
+
+    const { topicId, optionIds } = await seedTopic(regularCaller, "Multi User Arena", ["One", "Two"]);
+
+    // Both users vote on the same topic (different pairs needed due to unique constraint — use same pair different users)
+    await seedArenaVote(regularUser!.id, topicId, optionIds[0], optionIds[1], optionIds[0]);
+    await seedArenaVote(adminUser!.id, topicId, optionIds[0], optionIds[1], optionIds[1]);
+
+    const history = await regularCaller.users.getArenaVoteHistory({
+      username: TEST_USERS.regular.username,
+    });
+
+    expect(history.items.length).toBe(1);
+    expect(history.items[0].winnerName).toBe("One");
   });
 });
 
