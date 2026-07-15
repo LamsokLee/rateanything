@@ -8,6 +8,7 @@ import "@/styles/globals.css";
 import { NavSearch } from "@/components/NavSearch";
 import { NavAuth } from "@/components/NavAuth";
 import { NavCreateButton } from "@/components/NavCreateButton";
+import { MobileNavSearch } from "@/components/MobileNavSearch";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { GlobalModeToggle } from "@/components/GlobalModeToggle";
 import { ModeProvider } from "@/components/ModeProvider";
@@ -74,7 +75,7 @@ export default async function RootLayout({
             <AuthProvider>
               <ModeProvider>
                 <nav className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-sm">
-                  <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 gap-3">
+                  <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 py-3 gap-2 sm:gap-3">
                     <Link
                       href="/"
                       className="text-lg font-bold text-foreground transition-colors duration-200 hover:text-foreground/80 shrink-0"
@@ -86,7 +87,9 @@ export default async function RootLayout({
                       <NavSearch />
                     </div>
 
-                    <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-1.5 sm:gap-3">
+                      {/* Mobile-only search toggle — expands full-width row below nav */}
+                      <MobileNavSearch />
                       <GlobalModeToggle />
                       <NavCreateButton />
 
