@@ -79,10 +79,14 @@ describe('ArenaView', () => {
     mockedUseAuth.mockReturnValue({ user: { id: 'u1', displayName: 'Test', username: 'test' }, isLoading: false, isSignedIn: true });
   });
 
-  it('shows loading skeleton initially', () => {
+  it('shows loading placeholders on the persistent card initially', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))); // never resolves
     render(<ArenaView topicId="topic-1" />);
-    expect(screen.getByTestId('arena-loading')).toBeInTheDocument();
+    // The refactored ArenaView keeps the split-card in place during initial
+    // load and surfaces loading state via aria-labels on the two halves
+    // rather than a separate skeleton element.
+    expect(screen.getByLabelText('Loading option A')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading option B')).toBeInTheDocument();
   });
 
   it('renders two option cards after successful fetch', async () => {
