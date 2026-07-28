@@ -3,12 +3,52 @@
  * Reuses the TopicCard component for consistent layout.
  */
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getServerCaller } from "@/lib/server-trpc";
 import { TopicCard } from "@/components/TopicCard";
 import Link from "next/link";
 
 interface CategoryPageProps {
   params: { slug: string };
+}
+
+/** Generate basic OpenGraph metadata for category pages */
+export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
+  const { slug } = params;
+  try {
+    const caller = await getServerCaller();
+    const result = await caller.topics.byCategory({ slug, limit: 1 });
+    const displayName = result.category.name;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://rating.fyi";
+
+    return {
+      title: `${displayName} — RateAnything`,
+      description: `Browse and rate ${result.topics.length} topics in the ${displayName} category.`,
+      openGraph: {
+        title: `${displayName} — RateAnything`,
+        description: `Browse and rate topics in the ${displayName} category.`,
+        type: "website",
+        url: `${baseUrl}/category/${slug}`,
+        siteName: "RateAnything",
+        images: [
+          {
+            url: "/icons/icon-512.png",
+            width: 512,
+            height: 512,
+            alt: displayName,
+          },
+        ],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: `${displayName} — RateAnything`,
+        description: `Browse and rate topics in the ${displayName} category.`,
+        images: ["/icons/icon-512.png"],
+      },
+    };
+  } catch {
+    return { title: "Category" };
+  }
 }
 
 export default async function CategoryPage({ params }: CategoryPageProps) {
