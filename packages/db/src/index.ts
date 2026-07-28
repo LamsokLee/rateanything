@@ -18,35 +18,66 @@ import * as schema from "./schema/index.js";
 
 const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL environment variable is required");
-}
-
 /**
- * Use a global singleton so Next.js dev hot reloads don't spawn a new
- * postgres.js pool on every module evaluation. Without this, each reload
- * leaks 10 connections and eventually exhausts Postgres.
+ * Lazy singleton pattern — don't throw at import time so builds that
+ * import the package but don't actually query the DB (e.g. Vercel Preview
+ * deployments without a database env) can still compile.
+ *
+ * The db is only created on first access. If DATABASE_URL is missing,
+ * all db calls will fail at runtime with a clear error.
  */
 const globalForDb = globalThis as unknown as {
+  __rateanythingDbConnectionString?: string;
   __rateanythingDbClient?: ReturnType<typeof postgres>;
+  __rateanythingDrizzle?: ReturnType<typeof drizzle>;
 };
 
-const client =
-  globalForDb.__rateanythingDbClient ??
-  postgres(connectionString, {
-    // Small pool in dev (default 10 is overkill and exhausts connections
-    // quickly when modules reload). In production, slightly larger.
+function getClient(): ReturnType<typeof postgres> {
+  if (globalForDb.__rateanythingDbClient) return globalForDb.__rateanythingDbClient;
+
+  const cs = connectionString ?? globalForDb.__rateanythingDbConnectionString;
+  if (!cs) {
+    throw new Error(
+      "DATABASE_URL environment variable is required. " +
+        "Set it in your environment or call initDb() before first use."
+    );
+  }
+
+  globalForDb.__rateanythingDbClient = postgres(cs, {
     max: process.env.NODE_ENV === "production" ? 10 : 3,
-    // Close idle connections faster in dev so the pool doesn't hold slots.
     idle_timeout: process.env.NODE_ENV === "production" ? 30 : 10,
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__rateanythingDbClient = client;
+  return globalForDb.__rateanythingDbClient;
 }
 
-/** Drizzle ORM instance with full schema for relational queries */
-export const db = drizzle(client, { schema });
+function getDb(): ReturnType<typeof drizzle> {
+  if (globalForDb.__rateanythingDrizzle) return globalForDb.__rateanythingDrizzle;
+  globalForDb.__rateanythingDrizzle = drizzle(getClient(), { schema });
+  return globalForDb.__rateanythingDrizzle;
+}
+
+/**
+ * Explicitly initialize the database connection with a custom URL.
+ * Useful for tests or environments where DATABASE_URL isn't in process.env.
+ */
+export function initDb(url: string): ReturnType<typeof drizzle> {
+  globalForDb.__rateanythingDbConnectionString = url;
+  // Clear cached client so next getClient() creates a fresh one
+  delete globalForDb.__rateanythingDbClient;
+  delete globalForDb.__rateanythingDrizzle;
+  return getDb();
+}
+
+/**
+ * Lazy drizzle instance — connection is established on first query,
+ * not at import time.
+ */
+export const db = new Proxy({} as ReturnType<typeof drizzle>, {
+  get(_target, prop) {
+    return Reflect.get(getDb(), prop);
+  },
+});
 
 /** Re-export schema for convenience */
 export * from "./schema/index.js";
