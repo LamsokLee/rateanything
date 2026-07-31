@@ -19,12 +19,36 @@ import { ThemeProvider } from "next-themes";
 import { auth } from "@clerk/nextjs/server";
 import type { InitialState } from "@clerk/types";
 
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://rating.fyi";
+
 export const metadata: Metadata = {
   title: "RateAnything",
   description: "Rate anything. The world is watching.",
   manifest: "/manifest.json",
   other: {
     "mobile-web-app-capable": "yes",
+  },
+  metadataBase: new URL(baseUrl),
+  openGraph: {
+    title: "RateAnything",
+    description: "Rate anything. The world is watching.",
+    type: "website",
+    url: baseUrl,
+    siteName: "RateAnything",
+    images: [
+      {
+        url: "/icons/icon-512.png",
+        width: 512,
+        height: 512,
+        alt: "RateAnything",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "RateAnything",
+    description: "Rate anything. The world is watching.",
+    images: ["/icons/icon-512.png"],
   },
 };
 

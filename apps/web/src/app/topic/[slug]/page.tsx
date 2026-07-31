@@ -68,11 +68,21 @@ export async function generateMetadata({ params }: TopicPageProps): Promise<Meta
         description,
         type: "website",
         url,
+        siteName: "RateAnything",
+        images: [
+          {
+            url: "/icons/icon-512.png",
+            width: 512,
+            height: 512,
+            alt: title,
+          },
+        ],
       },
       twitter: {
         card: "summary_large_image",
         title,
         description,
+        images: ["/icons/icon-512.png"],
       },
     };
   } catch {
