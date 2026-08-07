@@ -533,4 +533,63 @@ export const ratingsRouter = router({
 
       return { score: rating?.score ?? null };
     }),
+
+  /** Get all model (AI) votes for a topic, grouped by option — display only */
+  getModelVotesForTopic: publicProcedure
+    .input(z.object({
+      topicId: z.string().uuid(),
+    }))
+    .query(async ({ input }) => {
+      const { topicId } = input;
+
+      // Fetch all ratings for options in this topic, joined with user info
+      const results = await db
+        .select({
+          optionId: options.id,
+          optionName: options.name,
+          ratingScore: ratings.score,
+          ratingComment: ratings.comment,
+          username: users.username,
+          avatarUrl: users.avatarUrl,
+        })
+        .from(ratings)
+        .innerJoin(options, eq(ratings.optionId, options.id))
+        .innerJoin(users, eq(ratings.userId, users.id))
+        .where(eq(options.topicId, topicId))
+        .orderBy(options.name, users.username);
+
+      // Group votes by option
+      const grouped: Record<string, {
+        optionId: string;
+        optionName: string;
+        votes: { username: string; avatarUrl: string | null; score: number; comment: string | null }[];
+      }> = {};
+
+      for (const row of results) {
+        if (!grouped[row.optionId]) {
+          grouped[row.optionId] = {
+            optionId: row.optionId,
+            optionName: row.optionName,
+            votes: [],
+          };
+        }
+        grouped[row.optionId].votes.push({
+          username: row.username,
+          avatarUrl: row.avatarUrl,
+          score: row.ratingScore,
+          comment: row.ratingComment,
+        });
+      }
+
+      // Convert to array and compute spread (max - min) for sorting
+      return Object.values(grouped)
+        .map((g) => {
+          const scores = g.votes.map((v) => v.score);
+          const min = Math.min(...scores);
+          const max = Math.max(...scores);
+          return { ...g, spread: max - min, min, max };
+        })
+        .sort((a, b) => b.spread - a.spread); // highest disagreement first
+    }),
+
 });

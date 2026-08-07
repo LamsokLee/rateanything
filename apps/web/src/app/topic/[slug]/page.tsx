@@ -16,6 +16,7 @@ import { CommentSection } from "@/components/CommentSection";
 import { ShareButton } from "@/components/ShareButton";
 import { ModeOnly } from "@/components/ModeOnly";
 import { TopicPageClient } from "@/components/TopicPageClient";
+import { AIVotes } from "@/components/AIVotes";
 
 interface TopicPageProps {
   params: { slug: string };
@@ -274,6 +275,9 @@ export default async function TopicPage({ params }: TopicPageProps) {
         historyByOption={historyByOption}
         chartColors={CHART_COLORS}
       />
+
+      {/* ─── AI VOTES — model disagreement display ─── */}
+      <AIVotes topicId={topic.id} />
 
       {/* ─── SCORE HISTORY (collapsible) — only in Rating mode ─── */}
       {historyData && historyData.options.length > 0 && (
