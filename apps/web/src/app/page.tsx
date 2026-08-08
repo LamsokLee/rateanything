@@ -5,6 +5,10 @@ import { getServerCaller } from "@/lib/server-trpc";
 import { TopicFeed } from "@/components/TopicFeed";
 import { db, categories as categoriesTable, asc } from "@rateanything/db";
 
+// Render at request time — prerendering at build would block the deploy on
+// a live DB connection (and time out static page generation).
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   let topics: Awaited<ReturnType<Awaited<ReturnType<typeof getServerCaller>>["topics"]["trending"]>>["topics"] = [];
   let categoriesList: { id: number; name: string; slug: string }[] = [];
