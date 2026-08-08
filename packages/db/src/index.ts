@@ -43,9 +43,16 @@ function getClient(): ReturnType<typeof postgres> {
     );
   }
 
+  const isTransactionPooler = /:6543(?:\/|$)/.test(cs);
+
   globalForDb.__rateanythingDbClient = postgres(cs, {
-    max: process.env.NODE_ENV === "production" ? 10 : 3,
-    idle_timeout: process.env.NODE_ENV === "production" ? 30 : 10,
+    // Serverless: keep the pool tiny. The transaction pooler handles concurrency,
+    // so one connection per function instance is enough and avoids exhausting
+    // the upstream pool.
+    max: process.env.NODE_ENV === "production" ? 1 : 3,
+    idle_timeout: process.env.NODE_ENV === "production" ? 5 : 10,
+    // Supabase transaction pooler (port 6543) does not support prepared statements.
+    prepare: isTransactionPooler ? false : undefined,
   });
 
   return globalForDb.__rateanythingDbClient;
