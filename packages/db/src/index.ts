@@ -44,6 +44,7 @@ function getClient(): ReturnType<typeof postgres> {
   }
 
   const isTransactionPooler = /:6543(?:\/|$)/.test(cs);
+  const isSupabase = /\.pooler\.supabase\.com/.test(cs);
 
   globalForDb.__rateanythingDbClient = postgres(cs, {
     // Serverless: keep the pool tiny. The transaction pooler handles concurrency,
@@ -53,6 +54,8 @@ function getClient(): ReturnType<typeof postgres> {
     idle_timeout: process.env.NODE_ENV === "production" ? 5 : 10,
     // Supabase transaction pooler (port 6543) does not support prepared statements.
     prepare: isTransactionPooler ? false : undefined,
+    // Supabase uses a self-signed cert; require TLS but don't fail verification.
+    ssl: isSupabase ? { rejectUnauthorized: false } : undefined,
   });
 
   return globalForDb.__rateanythingDbClient;
